@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120" role="img" aria-labelledby="title desc">
+  <title id="title">Nova Sponsor</title>
+  <desc id="desc">Sponsor placeholder logo</desc>
+  <rect width="320" height="120" rx="24" fill="#1b1730"/>
+  <rect x="38" y="34" width="52" height="52" rx="16" fill="#f6c177" opacity="0.18"/>
+  <path d="M52 84L64 36l12 48H52Z" fill="#f6c177"/>
+  <text x="112" y="56" fill="#eff6ff" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">NOVA</text>
+  <text x="112" y="83" fill="#93a4bc" font-family="Arial, Helvetica, sans-serif" font-size="14" letter-spacing="3">SPONSOR</text>
+</svg>

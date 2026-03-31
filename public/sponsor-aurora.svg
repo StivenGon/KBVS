@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120" role="img" aria-labelledby="title desc">
+  <title id="title">Aurora Sponsor</title>
+  <desc id="desc">Sponsor placeholder logo</desc>
+  <rect width="320" height="120" rx="24" fill="#10233f"/>
+  <circle cx="66" cy="60" r="28" fill="#78e2c0" opacity="0.18"/>
+  <path d="M42 81L66 39l24 42H42Z" fill="#78e2c0"/>
+  <text x="112" y="56" fill="#eff6ff" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">AURORA</text>
+  <text x="112" y="83" fill="#93a4bc" font-family="Arial, Helvetica, sans-serif" font-size="14" letter-spacing="3">SPONSOR</text>
+</svg>
