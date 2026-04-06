@@ -6,6 +6,7 @@ import {
   createCompletionEntry,
   createDemoAutoAdvance,
   createInitialRoomSnapshot,
+  normalizePlayerName,
   updateRoomFeed,
   winnerFromSnapshot,
   type ClientRole,
@@ -18,6 +19,7 @@ type ClientMessage =
       type: "join-room";
       roomCode: string;
       role: ClientRole;
+      name?: string;
     }
   | {
       type: "update-player";
@@ -98,7 +100,7 @@ wss.on("connection", (socket) => {
     }
 
     if (message.type === "join-room") {
-      joinRoom(client, message.roomCode, message.role);
+      joinRoom(client, message.roomCode, message.role, message.name);
       return;
     }
 
@@ -115,11 +117,17 @@ wss.on("connection", (socket) => {
 
     switch (message.type) {
       case "update-player": {
+        const nextName =
+          message.patch.name === undefined
+            ? room.players[message.playerId].name
+            : normalizePlayerName(message.patch.name, "");
+
         const nextPlayers = {
           ...room.players,
           [message.playerId]: {
             ...room.players[message.playerId],
             ...message.patch,
+            name: nextName,
           },
         };
 
@@ -199,7 +207,7 @@ setInterval(() => {
   }
 }, 180);
 
-function joinRoom(client: RoomClient, roomCode: string, role: ClientRole) {
+function joinRoom(client: RoomClient, roomCode: string, role: ClientRole, playerName?: string) {
   leaveRoom(client);
 
   client.roomCode = roomCode;
@@ -207,9 +215,12 @@ function joinRoom(client: RoomClient, roomCode: string, role: ClientRole) {
 
   const room = rooms.get(roomCode) ?? createInitialRoomSnapshot(roomCode);
   room.masterConnected = room.masterConnected || role === "master";
-  room.players.A.connected = room.players.A.connected || role === "A";
-  room.players.B.connected = room.players.B.connected || role === "B";
-  room.feed = updateRoomFeed(room.feed, `${role === "master" ? "Maestro" : `Jugador ${role}`} entró en ${roomCode}.`);
+  if (role === "A" || role === "B") {
+    room.players[role].connected = true;
+    room.players[role].name = normalizePlayerName(playerName, room.players[role].name);
+  }
+
+  room.feed = updateRoomFeed(room.feed, `${role === "master" ? "Maestro" : room.players[role]?.name ?? `Jugador ${role}`} entró en ${roomCode}.`);
   room.updatedAt = Date.now();
 
   rooms.set(roomCode, room);

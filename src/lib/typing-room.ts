@@ -50,6 +50,18 @@ export type PlayerStats = {
   elapsedText: string;
 };
 
+const PLAYER_NAME_MAX_LENGTH = 32;
+
+export function normalizePlayerName(value: string | undefined, fallback: string) {
+  const normalized = value?.replace(/\s+/g, " ").trim() ?? "";
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  return normalized.slice(0, PLAYER_NAME_MAX_LENGTH);
+}
+
 export const challengeTexts: TypingChallenge[] = [
   {
     title: "Ronda de control",
@@ -79,7 +91,7 @@ export const initialHistory: HistoryEntry[] = [
 
 export function createRoomCode() {
   const fragments = Array.from({ length: 4 }, () => Math.floor(Math.random() * 10).toString());
-  return `SALA-${fragments.join("")}`;
+  return fragments.join("");
 }
 
 export function formatClock(milliseconds: number) {
@@ -102,13 +114,13 @@ export function createInitialRoomSnapshot(roomCode = createRoomCode()): RoomSnap
     finishedAt: null,
     players: {
       A: {
-        name: "Ana",
+        name: "",
         ready: false,
         input: "",
         connected: false,
       },
       B: {
-        name: "Bruno",
+        name: "",
         ready: false,
         input: "",
         connected: false,

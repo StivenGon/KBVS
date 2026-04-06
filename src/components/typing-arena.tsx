@@ -3,6 +3,11 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 
+import auspicioDicosta from "../../images/auspicios/dicosta.png";
+import auspicioKaaSoft from "../../images/auspicios/kaa soft.png";
+import auspicioLaFortuna from "../../images/auspicios/la fortuna.png";
+import auspicioSGCreaciones from "../../images/auspicios/sg creaciones.png";
+
 import {
   calculatePlayerStats,
   challengeTexts,
@@ -15,6 +20,13 @@ import {
 } from "@/lib/typing-room";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
+
+const sponsorAssets = [
+  { name: "Dicosta", image: auspicioDicosta },
+  { name: "Kaa Soft", image: auspicioKaaSoft },
+  { name: "La Fortuna", image: auspicioLaFortuna },
+  { name: "SG Creaciones", image: auspicioSGCreaciones },
+];
 
 function resolveWebSocketUrl() {
   const envUrl = process.env.NEXT_PUBLIC_TYPING_WS_URL;
@@ -34,9 +46,11 @@ function resolveWebSocketUrl() {
 export default function TypingArena({
   roomCode,
   initialRole,
+  playerName,
 }: {
   roomCode: string;
   initialRole: ClientRole;
+  playerName?: string;
 }) {
   const [room, setRoom] = useState(() => createInitialRoomSnapshot(roomCode));
   const [clientRole, setClientRole] = useState<ClientRole>(initialRole);
@@ -47,6 +61,7 @@ export default function TypingArena({
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
+  const playerMetricsRef = useRef<Array<{ label: string; value: string }>>([]);
 
   const challengeText = challengeTexts[room.selectedTextIndex].text;
   const activePlayerId = clientRole === "master" ? controlledPlayer : clientRole;
@@ -84,6 +99,7 @@ export default function TypingArena({
           type: "join-room",
           roomCode,
           role: clientRole,
+          ...(playerName ? { name: playerName } : {}),
         });
       };
 
@@ -140,7 +156,7 @@ export default function TypingArena({
 
       socketRef.current?.close();
     };
-  }, [clientRole, roomCode, socketUrl]);
+  }, [clientRole, playerName, roomCode, socketUrl]);
 
   useEffect(() => {
     if (room.matchState !== "countdown" || !room.countdownEndsAt) {
@@ -173,6 +189,12 @@ export default function TypingArena({
   const isMasterView = clientRole === "master";
   const activeStats = activePlayerId === "A" ? statsA : statsB;
   const otherStats = otherPlayerId === "A" ? statsA : statsB;
+  const playerMetrics = [
+    { label: "Progreso", value: `${activeStats.progress}%` },
+    { label: "Errores", value: String(activeStats.mistakes) },
+    { label: "Precisión", value: `${activeStats.accuracy}%` },
+    { label: "WPM", value: String(activeStats.wpm) },
+  ];
   const masterPlayerViews = [
     { playerId: "A" as const, stats: statsA, accent: "emerald" as const },
     { playerId: "B" as const, stats: statsB, accent: "amber" as const },
@@ -194,6 +216,10 @@ export default function TypingArena({
         : connectionState === "error"
           ? "Conexión con error"
           : "Desconectado; intentando reconectar";
+
+  useEffect(() => {
+    playerMetricsRef.current = playerMetrics;
+  }, [playerMetrics]);
 
   function send(message: Record<string, unknown>) {
     const socket = socketRef.current;
@@ -328,7 +354,7 @@ export default function TypingArena({
 
   function renderChallengeText(playerId: PlayerId, accent?: "emerald" | "amber") {
     return (
-      <p className="whitespace-pre-wrap font-mono text-base leading-8 text-slate-200 sm:text-[17px] sm:leading-9">
+      <p className="whitespace-pre-wrap wrap-anywhere font-mono text-base leading-8 text-slate-900 sm:text-[17px] sm:leading-9">
         {challengeText.split("").map((character, index) => {
           const typedCharacter = room.players[playerId].input[index];
           const baseClass = "transition-colors duration-150";
@@ -337,7 +363,7 @@ export default function TypingArena({
             return (
               <span
                 key={`${playerId}-${character}-${index}`}
-                className={`${baseClass} ${typedCharacter === character ? (accent === "amber" ? "text-amber-200" : accent === "emerald" ? "text-emerald-200" : "text-emerald-300") : "text-rose-300"}`}
+                className={`${baseClass} ${typedCharacter === character ? (accent === "amber" ? "text-amber-900" : accent === "emerald" ? "text-emerald-900" : "text-emerald-900") : "text-rose-800"}`}
               >
                 {character === " " ? "\u00A0" : character}
               </span>
@@ -348,7 +374,7 @@ export default function TypingArena({
             return (
               <span
                 key={`${playerId}-${character}-${index}`}
-                className={`${baseClass} rounded-sm ${accent === "amber" ? "bg-amber-300/20 text-amber-100" : accent === "emerald" ? "bg-emerald-300/20 text-emerald-100" : "bg-amber-300/25 text-amber-100"}`}
+                className={`${baseClass} rounded-sm ${accent === "amber" ? "bg-amber-200 text-amber-950" : accent === "emerald" ? "bg-emerald-200 text-emerald-950" : "bg-amber-200 text-amber-950"}`}
               >
                 {character === " " ? "\u00A0" : character}
               </span>
@@ -356,7 +382,7 @@ export default function TypingArena({
           }
 
           return (
-            <span key={`${playerId}-${character}-${index}`} className={`${baseClass} text-slate-500`}>
+            <span key={`${playerId}-${character}-${index}`} className={`${baseClass} text-slate-700`}>
               {character === " " ? "\u00A0" : character}
             </span>
           );
@@ -377,7 +403,7 @@ export default function TypingArena({
   const elapsedText = room.startedAt ? formatClock((room.finishedAt ?? Date.now()) - room.startedAt) : "00:00.00";
 
   return (
-    <section className="relative flex min-h-0 flex-1 flex-col gap-3 overflow-hidden py-0 text-slate-100">
+    <section className="relative flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden py-0 text-slate-900 sm:gap-2.5">
       {room.matchState === "countdown" ? (
         <div className="countdown-overlay pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[28px] border border-amber-200/20 bg-slate-950/80 px-6 py-10 backdrop-blur-lg">
           <div className="relative flex w-full max-w-2xl flex-col items-center gap-4 rounded-4xl border border-white/10 bg-[radial-gradient(circle_at_top,rgba(251,191,36,0.18),rgba(2,6,23,0.78)_70%)] px-6 py-10 text-center shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
@@ -391,10 +417,10 @@ export default function TypingArena({
         </div>
       ) : null}
 
-      <header className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/10 bg-(--surface) px-4 py-3 shadow-[0_20px_60px_rgba(1,8,18,0.35)] backdrop-blur-xl">
+      <header className="flex flex-wrap items-center justify-between gap-2 rounded-3xl border border-slate-200 bg-white/82 px-3 py-2.5 shadow-[0_20px_60px_rgba(1,8,18,0.12)] backdrop-blur-xl sm:px-4 sm:py-3">
         <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.35em] text-slate-400">{roleLabel}</p>
-          <div className="flex flex-wrap gap-2 text-sm text-slate-300">
+          <p className="text-xs uppercase tracking-[0.35em] text-slate-700">{roleLabel}</p>
+          <div className="flex flex-wrap gap-2 text-sm text-slate-800">
             <span>{room.roomCode}</span>
             <span>{connectionLabel}</span>
           </div>
@@ -405,39 +431,39 @@ export default function TypingArena({
             <button
               type="button"
               onClick={startCountdown}
-              className="rounded-full border border-emerald-300/30 bg-emerald-300/15 px-3 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-300/25"
+              className="rounded-full border border-(--accent-strong)/20 bg-(--accent-strong)/10 px-3 py-2 text-sm font-medium text-(--accent-strong) transition hover:bg-(--accent-strong)/15"
             >
               Empezar
             </button>
             <button
               type="button"
               onClick={resetMatch}
-              className="rounded-full border border-white/15 bg-white/5 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10"
+              className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
               Reset
             </button>
           </div>
         ) : (
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">Espera el inicio</span>
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">Espera el inicio</span>
         )}
       </header>
 
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,2.55fr)_minmax(0,210px)] xl:grid-cols-[minmax(0,3fr)_minmax(0,200px)] xl:gap-3">
-        <section className="min-h-0 rounded-3xl border border-white/10 bg-(--surface) p-3 shadow-[0_20px_60px_rgba(1,8,18,0.35)] backdrop-blur-xl lg:p-4">
-          <div className="flex items-center justify-between gap-3">
+      <div className="grid min-h-0 flex-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(250px,320px)] lg:grid-cols-[minmax(0,2.15fr)_minmax(290px,0.85fr)] xl:grid-cols-[minmax(0,2.35fr)_minmax(320px,0.75fr)] xl:gap-3">
+        <section className="flex min-h-0 flex-col rounded-3xl border border-slate-200 bg-white/80 p-2 shadow-[0_20px_60px_rgba(1,8,18,0.12)] backdrop-blur-xl sm:p-3 lg:p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Texto</p>
-              <h2 className="mt-1 text-xl font-semibold text-white xl:text-2xl">{challengeTexts[room.selectedTextIndex].title}</h2>
+              <p className="text-xs uppercase tracking-[0.35em] text-slate-700">Texto</p>
+              <h2 className="mt-1 text-lg font-semibold text-slate-900 sm:text-xl xl:text-2xl">{challengeTexts[room.selectedTextIndex].title}</h2>
             </div>
 
             {isMasterView ? (
               <select
                 value={room.selectedTextIndex}
                 onChange={(event) => chooseText(Number(event.target.value))}
-                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none"
+                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none"
               >
                 {challengeTexts.map((text, index) => (
-                  <option key={text.title} value={index} className="bg-slate-950 text-white">
+                  <option key={text.title} value={index} className="bg-white text-slate-700">
                     Texto {index + 1}
                   </option>
                 ))}
@@ -445,54 +471,54 @@ export default function TypingArena({
             ) : null}
           </div>
 
-          <div className="mt-3 space-y-3 rounded-3xl border border-white/10 bg-slate-950/40 p-3 leading-7 text-slate-200 sm:p-4 lg:p-5 xl:p-6">
+          <div className="mt-2 flex min-h-0 flex-1 flex-col space-y-2 rounded-3xl border border-slate-200 bg-slate-50 p-2 leading-7 text-slate-700 sm:mt-3 sm:space-y-2.5 sm:p-3 lg:p-3.5 xl:p-4">
             {isMasterView ? (
-              <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-950/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-slate-950/80 px-3 py-3 lg:px-4 xl:px-5">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-[linear-gradient(180deg,rgba(17,79,183,0.06),rgba(255,138,31,0.04))] px-3 py-2.5 lg:px-4">
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.34em] text-slate-400">Comparación en vivo</p>
-                    <p className="mt-1 text-sm text-slate-300">Vista tipo editor para seguir a ambos jugadores al mismo tiempo.</p>
+                    <p className="text-[11px] uppercase tracking-[0.34em] text-slate-700">Comparación en vivo</p>
+                    <p className="mt-1 text-xs text-slate-800 sm:text-sm">Seguimiento paralelo de ambos jugadores.</p>
                   </div>
-                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-slate-400">
-                    <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2.5 py-1 text-emerald-100">A</span>
-                    <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2.5 py-1 text-amber-100">VS</span>
-                    <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-2.5 py-1 text-sky-100">B</span>
+                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-slate-700">
+                    <span className="rounded-full border border-(--accent-strong)/20 bg-(--accent-strong)/10 px-2.5 py-1 text-(--accent-strong)">A</span>
+                    <span className="rounded-full border border-(--accent)/20 bg-(--accent)/10 px-2.5 py-1 text-(--accent)">VS</span>
+                    <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-2.5 py-1 text-sky-700">B</span>
                   </div>
                 </div>
 
-                <div className="grid gap-px bg-white/10 lg:grid-cols-2">
+                <div className="grid flex-1 gap-px bg-slate-200 md:grid-cols-2">
                 {masterPlayerViews.map(({ playerId, stats, accent }) => (
-                  <div key={playerId} className="bg-slate-950/70 p-3 sm:p-4 lg:p-4 xl:p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div key={playerId} className="flex min-h-0 flex-col bg-white p-2.5 sm:p-3 xl:p-3.5">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
-                        <p className="text-[11px] uppercase tracking-[0.34em] text-slate-400">Jugador {playerId}</p>
-                        <p className="mt-1 text-sm font-semibold text-white xl:text-base">{room.players[playerId].name}</p>
-                        <p className="mt-1 text-[11px] uppercase tracking-[0.24em] text-slate-400 xl:text-xs">
+                        <p className="text-[10px] uppercase tracking-[0.34em] text-slate-700">Jugador {playerId}</p>
+                        <p className="mt-1 truncate text-sm font-semibold text-slate-950">{room.players[playerId].name}</p>
+                        <p className="mt-1 text-[10px] uppercase tracking-[0.24em] text-slate-700 xl:text-xs">
                           {stats.progress}% avance · {stats.wpm} WPM
                         </p>
                       </div>
                       <div
-                        className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.25em] ${
+                        className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] ${
                           accent === "emerald"
-                            ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
-                            : "border-amber-300/20 bg-amber-300/10 text-amber-100"
+                            ? "border-(--accent-strong)/20 bg-(--accent-strong)/10 text-(--accent-strong)"
+                            : "border-(--accent)/20 bg-(--accent)/10 text-(--accent)"
                         }`}
                       >
                         {stats.textProgressLabel}
                       </div>
                     </div>
 
-                    <div className="mt-3 rounded-2xl border border-white/5 bg-slate-950/80 p-3 xl:p-4">
-                      <div className="mb-2 flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.26em] text-slate-400">
+                    <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50 p-2.5 xl:p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.24em] text-slate-700">
                         <span>Editor en vivo</span>
                         <span>{room.players[playerId].input.length}/{challengeText.length}</span>
                       </div>
-                      <div className="min-h-36 max-h-72 overflow-auto pr-1 xl:min-h-40 xl:max-h-80">
+                      <div className="min-h-24 max-h-44 overflow-auto pr-1 sm:min-h-28 sm:max-h-56 xl:min-h-32 xl:max-h-64">
                         {renderChallengeText(playerId, accent)}
                       </div>
                     </div>
 
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <div className="mt-2.5 grid gap-1.5 sm:grid-cols-3">
                       <InfoTile label="Tiempo" value={stats.elapsedText} />
                       <InfoTile label="Precisión" value={`${stats.accuracy}%`} />
                       <InfoTile label="Errores" value={String(stats.mistakes)} />
@@ -502,43 +528,43 @@ export default function TypingArena({
                 </div>
               </div>
             ) : (
-              <div className="rounded-2xl border border-white/5 bg-slate-950/60 p-4 sm:p-5 xl:p-6">
-                <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-400">
+              <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white p-3 sm:p-3.5 xl:p-4">
+                <div className="mb-2.5 flex items-center justify-between text-[10px] uppercase tracking-[0.28em] text-slate-700 sm:text-xs">
                   <span>Editor activo</span>
                   <span>
                     Jugador {activePlayerId} · {activeStats.progress}% · {activeStats.wpm} WPM
                   </span>
                 </div>
-                {renderChallengeText(activePlayerId)}
+                <div className="min-h-0 flex-1 overflow-hidden wrap-anywhere">
+                  {renderChallengeText(activePlayerId)}
+                </div>
               </div>
             )}
           </div>
 
           {isMasterView ? null : (
-            <>
+            <div className="mt-2.5 flex min-h-0 flex-1 flex-col">
               <textarea
                 value={room.players[activePlayerId].input}
                 onChange={handleTypingChange}
-                disabled={room.matchState !== "live" || (clientRole !== "master" && clientRole !== activePlayerId)}
-                rows={6}
+                disabled={room.matchState !== "live" || clientRole !== activePlayerId}
+                rows={4}
                 placeholder={room.matchState === "countdown" ? "Espera el inicio..." : "Escribe aquí"}
-                className="mt-4 w-full rounded-3xl border border-white/10 bg-slate-950/55 p-4 text-base leading-7 text-white outline-none transition placeholder:text-slate-500 focus:border-amber-300/50 focus:ring-2 focus:ring-amber-300/20 disabled:cursor-not-allowed disabled:opacity-70"
+                className="min-h-28 w-full flex-1 rounded-3xl border border-white/10 bg-slate-950/55 p-2.5 text-sm leading-6 text-white outline-none transition placeholder:text-slate-500 focus:border-amber-300/50 focus:ring-2 focus:ring-amber-300/20 disabled:cursor-not-allowed disabled:opacity-70 sm:p-3 sm:text-base sm:leading-7"
               />
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-4 xl:gap-4">
-                <MetricCard label="Progreso" value={`${activeStats.progress}%`} tone="emerald" />
-                <MetricCard label="Errores" value={String(activeStats.mistakes)} tone="rose" />
-                <MetricCard label="Precisión" value={`${activeStats.accuracy}%`} tone="amber" />
-                <MetricCard label="WPM" value={String(activeStats.wpm)} tone="sky" />
-              </div>
-            </>
+            </div>
           )}
         </section>
 
-        <aside className="flex min-h-0 flex-col rounded-3xl border border-white/10 bg-(--surface-strong) p-2 shadow-[0_20px_60px_rgba(1,8,18,0.35)] backdrop-blur-xl lg:p-2.5 xl:p-2.5">
-          <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Sala</p>
+        <aside className="flex min-h-0 flex-col gap-2 rounded-3xl border border-slate-200 bg-white/80 p-2.5 shadow-[0_20px_60px_rgba(1,8,18,0.12)] backdrop-blur-xl lg:sticky lg:top-3 lg:h-fit lg:max-h-[calc(100dvh-1.5rem)] lg:overflow-auto lg:p-3 xl:gap-2.5 xl:p-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-700">Sala</p>
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] uppercase tracking-[0.24em] text-slate-700">
+              Vista compacta
+            </span>
+          </div>
 
-          <div className="mt-2 space-y-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             <MasterPlayerCard
               name={room.players.A.name}
               role="A"
@@ -567,14 +593,7 @@ export default function TypingArena({
             />
           </div>
 
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <InfoTile label="Estado" value={liveLabel} />
-            <InfoTile label="Sala" value={room.roomCode} />
-          </div>
-
-          <div className="mt-2 rounded-2xl border border-white/10 bg-slate-950/35 p-2">
-            <SponsorCarousel />
-          </div>
+          <SponsorCarousel />
         </aside>
       </div>
     </section>
@@ -598,18 +617,18 @@ function MetricCard({
   }[tone];
 
   return (
-    <div className={`rounded-[20px] border p-5 ${toneStyles}`}>
-      <p className="text-xs uppercase tracking-[0.28em] opacity-80">{label}</p>
-      <p className="mt-2 text-3xl font-semibold">{value}</p>
+    <div className={`w-full rounded-2xl border p-2 ${toneStyles}`}>
+      <p className="text-[9px] uppercase tracking-[0.24em] opacity-80">{label}</p>
+      <p className="mt-1 text-[1.05rem] font-semibold leading-none sm:mt-1.5 sm:text-[1.25rem]">{value}</p>
     </div>
   );
 }
 
 function InfoTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-white/5 p-3">
-      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{label}</p>
-      <p className="mt-2 wrap-break-word text-base font-semibold text-white">{value}</p>
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] sm:p-3.5">
+      <p className="text-[10px] uppercase tracking-[0.32em] text-slate-700">{label}</p>
+      <p className="mt-2 wrap-break-word text-sm font-semibold leading-5 text-slate-950 sm:text-base">{value}</p>
     </div>
   );
 }
@@ -715,39 +734,37 @@ function MasterPlayerCard({
     accent === "emerald"
       ? "from-emerald-300 to-cyan-300"
       : "from-amber-300 to-orange-300";
+  const displayName = name.trim() ? name : "";
 
   return (
-    <div className="rounded-[20px] border border-white/10 bg-slate-950/45 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-white">{name}</p>
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-400">{role}</p>
+    <div className="rounded-[20px] border border-slate-200 bg-white p-3.5 shadow-[0_20px_50px_rgba(1,8,18,0.08)] sm:p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-5 text-slate-950 whitespace-normal wrap-break-word">{displayName || `Jugador ${role}`}</p>
         </div>
-        <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-white">
-          {connected ? "En línea" : "Sin conexión"}
-        </span>
+        <span
+          className={`mt-0.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full ${connected ? "bg-emerald-500 ring-2 ring-emerald-100" : "bg-slate-300 ring-2 ring-slate-100"}`}
+          aria-label={connected ? "En línea" : "Sin conexión"}
+          title={connected ? "En línea" : "Sin conexión"}
+        />
       </div>
 
-      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/10">
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
         <div
           className={`h-full rounded-full bg-linear-to-r ${accentStyles} transition-[width] duration-300`}
           style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
         />
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-[11px] uppercase tracking-[0.28em] text-slate-400">
-        <span>{time}</span>
-        <span>
-          {progress}% · {accuracy}%
-        </span>
-      </div>
-
-      <div className="mt-2 space-y-1.5 text-sm text-slate-300">
-        <p>{stats}</p>
-        <p className="text-xs uppercase tracking-[0.24em] text-slate-400">{textProgressLabel}</p>
-        <p className="text-xs text-slate-400">
-          {typedCharacters}/{targetCharacters} escritos sobre el texto objetivo
-        </p>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.72rem] leading-5 text-slate-700 sm:text-[0.76rem]">
+        <span className="font-medium text-slate-600">Avance</span>
+        <span className="font-semibold text-slate-950">{progress}%</span>
+        <span className="text-slate-300">•</span>
+        <span className="font-medium text-slate-600">Tiempo</span>
+        <span className="font-semibold text-slate-950">{time}</span>
+        <span className="text-slate-300">•</span>
+        <span className="font-medium text-slate-600">WPM</span>
+        <span className="font-semibold text-slate-950">{stats.replace(/ WPM$/u, "")}</span>
       </div>
     </div>
   );
@@ -758,27 +775,17 @@ function sendMessage(socket: WebSocket, message: Record<string, unknown>) {
 }
 
 function SponsorCarousel() {
-  const sponsors = [
-    { name: "Aurora", image: "/sponsor-aurora.svg" },
-    { name: "Nova", image: "/sponsor-nova.svg" },
-    { name: "Echo", image: "/sponsor-echo.svg" },
-    { name: "Vercel", image: "/vercel.svg" },
-  ];
-
   return (
-    <div className="space-y-2">
-      <p className="text-xs uppercase tracking-[0.34em] text-slate-400">Patrocinadores</p>
-      <div className="overflow-hidden rounded-2xl border border-white/5 bg-slate-950/60 px-1 py-2">
-        <div className="sponsor-marquee flex w-max items-center gap-3 py-1 pr-3">
-          {[...sponsors, ...sponsors].map((sponsor, index) => (
-            <div
-              key={`${sponsor.name}-${index}`}
-              className="flex h-20 w-44 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-3"
-            >
-              <Image src={sponsor.image} alt={sponsor.name} width={160} height={64} className="h-12 w-auto object-contain" />
-            </div>
-          ))}
-        </div>
+    <div className="w-full overflow-hidden rounded-3xl border border-slate-200 bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.95)] sm:p-4">
+      <div className="sponsor-marquee flex w-max items-center gap-4 pr-4 sm:gap-5 lg:gap-6">
+        {[...sponsorAssets, ...sponsorAssets].map((sponsor, index) => (
+          <div
+            key={`${sponsor.name}-${index}`}
+            className="flex h-28 w-48 shrink-0 items-center justify-center rounded-2xl border border-slate-100 bg-white px-4 py-3 sm:h-32 sm:w-56 lg:h-36 lg:w-64"
+          >
+            <Image src={sponsor.image} alt={sponsor.name} width={360} height={220} className="h-20 w-auto object-contain sm:h-24 lg:h-28" />
+          </div>
+        ))}
       </div>
     </div>
   );

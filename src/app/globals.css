@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #06111f;
-  --foreground: #eff6ff;
-  --muted: #93a4bc;
-  --surface: rgba(11, 20, 36, 0.78);
-  --surface-strong: rgba(15, 27, 47, 0.94);
-  --accent: #f6c177;
-  --accent-strong: #78e2c0;
-  color-scheme: dark;
+  --background: #f4f0ea;
+  --foreground: #0f2240;
+  --muted: #5d6b82;
+  --surface: rgba(10, 20, 38, 0.84);
+  --surface-strong: rgba(13, 28, 52, 0.94);
+  --accent: #ff8a1f;
+  --accent-strong: #1350c8;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -20,18 +20,17 @@
 
 html {
   min-height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(120, 226, 192, 0.18), transparent 30%),
-    radial-gradient(circle at top right, rgba(246, 193, 119, 0.18), transparent 28%),
-    linear-gradient(180deg, #06111f 0%, #081423 55%, #050b14 100%);
+  background-color: #f4f0ea;
 }
 
 body {
   min-height: 100vh;
+  background-color: #f4f0ea;
   background:
-    radial-gradient(circle at 25% 20%, rgba(120, 226, 192, 0.14), transparent 22%),
-    radial-gradient(circle at 75% 0%, rgba(246, 193, 119, 0.16), transparent 24%),
-    linear-gradient(180deg, #091221 0%, #060d17 100%);
+    radial-gradient(circle at 18% 12%, rgba(17, 79, 183, 0.12), transparent 22%),
+    radial-gradient(circle at 82% 18%, rgba(255, 138, 31, 0.16), transparent 24%),
+    radial-gradient(circle at 50% 50%, rgba(15, 34, 64, 0.03), transparent 45%),
+    linear-gradient(180deg, #f9f6f1 0%, #f4f0ea 60%, #efe9df 100%);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
@@ -41,8 +40,21 @@ body {
 }
 
 ::selection {
-  background: rgba(246, 193, 119, 0.35);
-  color: #eff6ff;
+  background: rgba(255, 138, 31, 0.28);
+  color: #0f2240;
+}
+
+.poster-grid {
+  background-image:
+    linear-gradient(135deg, rgba(17, 79, 183, 0.045) 25%, transparent 25%, transparent 50%, rgba(17, 79, 183, 0.045) 50%, rgba(17, 79, 183, 0.045) 75%, transparent 75%, transparent),
+    linear-gradient(45deg, rgba(255, 138, 31, 0.04) 25%, transparent 25%, transparent 50%, rgba(255, 138, 31, 0.04) 50%, rgba(255, 138, 31, 0.04) 75%, transparent 75%, transparent);
+  background-size: 180px 180px;
+  background-position: 0 0, 90px 90px;
+}
+
+.poster-diagonal {
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0 16%, transparent 16% 34%, rgba(255, 255, 255, 0.35) 34% 49%, transparent 49% 100%);
+  opacity: 0.22;
 }
 
 @keyframes countdown-overlay-in {

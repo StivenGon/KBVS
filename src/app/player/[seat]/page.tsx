@@ -8,10 +8,10 @@ export default async function PlayerSeatPage({
   searchParams,
 }: {
   params: Promise<{ seat: string }>;
-  searchParams: Promise<{ room?: string }>;
+  searchParams: Promise<{ room?: string; name?: string }>;
 }) {
   const { seat } = await params;
-  const { room } = await searchParams;
+  const { room, name } = await searchParams;
 
   if (seat !== "A" && seat !== "B") {
     notFound();
@@ -27,6 +27,8 @@ export default async function PlayerSeatPage({
       title={`Vista jugador ${seat}`}
       description={`Esta ruta está dedicada al jugador ${seat}. La arena comparte la misma sala WebSocket, pero esta pestaña entra con su plaza y control propios.`}
       roomCode={room}
+      playerName={name}
+      showIntro={false}
     />
   );
 }

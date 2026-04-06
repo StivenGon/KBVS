@@ -7,6 +7,7 @@ import Link from "next/link";
 import {
   createInitialRoomSnapshot,
   createRoomCode,
+  normalizePlayerName,
   type ClientRole,
   type PlayerId,
   type RoomSnapshot,
@@ -152,13 +153,15 @@ export default function LobbyHall() {
   }
 
   function updatePlayerName(playerId: PlayerId, value: string) {
+    const nextName = normalizePlayerName(value, room.players[playerId].name);
+
     setRoom((current) => ({
       ...current,
       players: {
         ...current.players,
         [playerId]: {
           ...current.players[playerId],
-          name: value,
+          name: nextName,
         },
       },
       updatedAt: Date.now(),
@@ -167,7 +170,7 @@ export default function LobbyHall() {
     send({
       type: "update-player",
       playerId,
-      patch: { name: value },
+      patch: { name: nextName },
     });
   }
 

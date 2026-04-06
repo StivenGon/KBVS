@@ -10,11 +10,15 @@ export default function RoleShell({
   title,
   description,
   roomCode,
+  playerName,
+  showIntro = true,
 }: {
   role: ClientRole;
   title: string;
   description: string;
   roomCode: string;
+  playerName?: string;
+  showIntro?: boolean;
 }) {
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -41,18 +45,18 @@ export default function RoleShell({
   const shellClassName =
     role === "master"
       ? "mx-auto flex h-dvh w-full max-w-none flex-col overflow-hidden px-3 py-3 sm:px-4 lg:px-5"
-      : "mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col px-4 py-6 sm:px-6 lg:px-8";
+      : "mx-auto flex h-dvh min-h-0 w-full max-w-screen-2xl flex-col overflow-hidden px-2 py-2 sm:px-3 sm:py-3 lg:px-4 lg:py-4";
 
   return (
     <main className={shellClassName}>
-      {role === "master" ? null : (
+      {role === "master" || !showIntro ? null : (
         <section className="mb-3 rounded-[28px] border border-white/10 bg-(--surface) p-3 text-slate-100 shadow-[0_20px_60px_rgba(1,8,18,0.3)] backdrop-blur-xl sm:p-4">
           <p className="text-sm uppercase tracking-[0.35em] text-slate-400">{title}</p>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{description}</p>
         </section>
       )}
 
-      <TypingArena roomCode={roomCode} initialRole={role} />
+      <TypingArena roomCode={roomCode} initialRole={role} playerName={playerName} />
     </main>
   );
 }
