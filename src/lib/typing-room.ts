@@ -2,9 +2,19 @@ export type PlayerId = "A" | "B";
 export type ClientRole = "master" | PlayerId;
 export type MatchState = "lobby" | "countdown" | "live" | "finished";
 
+export type DifficultyTone = "emerald" | "amber" | "rose";
+
+export type TextDifficulty = {
+  id: number;
+  label: string;
+  tone: DifficultyTone;
+};
+
 export type TypingChallenge = {
+  id: number;
   text: string;
   title: string;
+  textDifficultyId: number;
 };
 
 export type PlayerSnapshot = {
@@ -64,18 +74,50 @@ export function normalizePlayerName(value: string | undefined, fallback: string)
 
 export const challengeTexts: TypingChallenge[] = [
   {
+    id: 1,
     title: "Ronda de control",
     text: "En la arena de mecanografía, cada palabra cuenta y cada pausa revela el ritmo real del jugador.",
+    textDifficultyId: 1,
   },
   {
+    id: 2,
     title: "Ronda de precisión",
     text: "Las teclas rápidas no ganan solas; gana quien mantiene precisión, ritmo y control bajo presión.",
+    textDifficultyId: 2,
   },
   {
+    id: 3,
     title: "Ronda maestro",
     text: "Dos rivales, una sola línea de texto y un maestro observando cada error en tiempo real.",
+    textDifficultyId: 3,
   },
 ];
+
+export const textDifficultyCatalog: TextDifficulty[] = [
+  {
+    id: 1,
+    label: "Baja",
+    tone: "emerald",
+  },
+  {
+    id: 2,
+    label: "Media",
+    tone: "amber",
+  },
+  {
+    id: 3,
+    label: "Alta",
+    tone: "rose",
+  },
+];
+
+export function getTextDifficulty(textDifficultyId: number) {
+  return textDifficultyCatalog.find((difficulty) => difficulty.id === textDifficultyId) ?? textDifficultyCatalog[0];
+}
+
+export function getChallengeDifficulty(challenge: TypingChallenge) {
+  return getTextDifficulty(challenge.textDifficultyId);
+}
 
 export const initialFeed = [
   "Sala demo lista para dos jugadores y una vista maestro.",

@@ -1,7 +1,7 @@
 'use client';
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import auspicioDicosta from "../../images/auspicios/dicosta.png";
 import auspicioKaaSoft from "../../images/auspicios/kaa soft.png";
@@ -10,7 +10,6 @@ import auspicioSGCreaciones from "../../images/auspicios/sg creaciones.png";
 
 import {
   calculatePlayerStats,
-  challengeTexts,
   createInitialRoomSnapshot,
   formatClock,
   type ClientRole,
@@ -18,6 +17,8 @@ import {
   type RoomSnapshot,
   updateRoomFeed,
 } from "@/lib/typing-room";
+import TextCatalogModal from "@/components/text-catalog-modal";
+import { buildFallbackCatalog, type CatalogText } from "@/lib/text-catalog";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
@@ -53,35 +54,50 @@ export default function TypingArena({
   playerName?: string;
 }) {
   const [room, setRoom] = useState(() => createInitialRoomSnapshot(roomCode));
-  const [clientRole, setClientRole] = useState<ClientRole>(initialRole);
-  const [controlledPlayer, setControlledPlayer] = useState<PlayerId>(initialRole === "master" ? "A" : initialRole);
+  const clientRole = initialRole;
+  const controlledPlayer: PlayerId = initialRole === "master" ? "A" : initialRole;
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
-  const [clockTick, setClockTick] = useState(Date.now());
-  const [socketUrl, setSocketUrl] = useState<string | null>(null);
+  const [clockTick, setClockTick] = useState(() => Date.now());
+  const [socketUrl] = useState(() => resolveWebSocketUrl());
+  const [textCatalog, setTextCatalog] = useState<CatalogText[]>(() => buildFallbackCatalog());
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const typingInputRef = useRef<HTMLTextAreaElement | null>(null);
   const mountedRef = useRef(false);
   const playerMetricsRef = useRef<Array<{ label: string; value: string }>>([]);
 
-  const challengeText = challengeTexts[room.selectedTextIndex].text;
+  const activeCatalogIndex = Math.min(room.selectedTextIndex, Math.max(0, textCatalog.length - 1));
+  const challengeMeta = textCatalog[activeCatalogIndex] ?? textCatalog[0];
+  const challengeText = challengeMeta.text;
+  const challengeDifficulty = challengeMeta.difficulty;
   const activePlayerId = clientRole === "master" ? controlledPlayer : clientRole;
   const otherPlayerId: PlayerId = activePlayerId === "A" ? "B" : "A";
 
-  useEffect(() => {
-    setRoom(createInitialRoomSnapshot(roomCode));
-    setClientRole(initialRole);
-    setControlledPlayer(initialRole === "master" ? "A" : initialRole);
-  }, [roomCode, initialRole]);
+  const refreshCatalog = useCallback(async () => {
+    setCatalogLoading(true);
 
-  useEffect(() => {
-    setSocketUrl(resolveWebSocketUrl());
+    try {
+      const response = await fetch("/api/text-catalog", { cache: "no-store" });
+
+      if (!response.ok) {
+        throw new Error("No se pudo cargar el catálogo de textos.");
+      }
+
+      const payload = (await response.json()) as { texts?: CatalogText[] };
+
+      if (payload.texts?.length) {
+        setTextCatalog(payload.texts);
+      }
+    } catch {
+      setTextCatalog(buildFallbackCatalog());
+    } finally {
+      setCatalogLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (!socketUrl) {
-      return;
-    }
-
     mountedRef.current = true;
 
     const connect = () => {
@@ -159,12 +175,14 @@ export default function TypingArena({
   }, [clientRole, playerName, roomCode, socketUrl]);
 
   useEffect(() => {
-    if (room.matchState !== "countdown" || !room.countdownEndsAt) {
-      setClockTick(Date.now());
+    void refreshCatalog();
+  }, [refreshCatalog]);
+
+  useEffect(() => {
+    if (room.matchState !== "countdown" && room.matchState !== "live") {
       return;
     }
 
-    setClockTick(Date.now());
     const timer = window.setInterval(() => {
       setClockTick(Date.now());
     }, 250);
@@ -172,18 +190,30 @@ export default function TypingArena({
     return () => window.clearInterval(timer);
   }, [room.matchState, room.countdownEndsAt]);
 
+  useEffect(() => {
+    if (room.matchState !== "live" || clientRole !== activePlayerId) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      typingInputRef.current?.focus();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activePlayerId, clientRole, room.matchState, room.players[activePlayerId].input]);
+
   const statsA = calculatePlayerStats(
     room.players.A.input,
     challengeText,
     room.startedAt,
-    Date.now(),
+    clockTick,
     room.finishedAt,
   );
   const statsB = calculatePlayerStats(
     room.players.B.input,
     challengeText,
     room.startedAt,
-    Date.now(),
+    clockTick,
     room.finishedAt,
   );
   const isMasterView = clientRole === "master";
@@ -280,15 +310,23 @@ export default function TypingArena({
   }
 
   function chooseText(selectedTextIndex: number) {
+    if (room.matchState !== "lobby") {
+      return;
+    }
+
+    const nextTextIndex = Math.max(0, Math.min(selectedTextIndex, textCatalog.length - 1));
+
     mutateRoom((current) => ({
       ...current,
-      selectedTextIndex,
+      selectedTextIndex: nextTextIndex,
       updatedAt: Date.now(),
     }));
 
+    setIsCatalogModalOpen(false);
+
     send({
       type: "set-text",
-      selectedTextIndex,
+      selectedTextIndex: nextTextIndex,
     });
   }
 
@@ -350,31 +388,41 @@ export default function TypingArena({
       playerId: activePlayerId,
       input: nextValue,
     });
+
+    window.requestAnimationFrame(() => {
+      typingInputRef.current?.focus();
+    });
   }
 
   function renderChallengeText(playerId: PlayerId, accent?: "emerald" | "amber") {
+    const playerInput = room.players[playerId].input;
+
     return (
       <p className="whitespace-pre-wrap wrap-anywhere font-mono text-base leading-8 text-slate-900 sm:text-[17px] sm:leading-9">
         {challengeText.split("").map((character, index) => {
-          const typedCharacter = room.players[playerId].input[index];
-          const baseClass = "transition-colors duration-150";
+          const typedCharacter = playerInput[index];
+          const baseClass = "transition-all duration-150";
 
-          if (index < room.players[playerId].input.length) {
+          if (index < playerInput.length) {
             return (
               <span
                 key={`${playerId}-${character}-${index}`}
-                className={`${baseClass} ${typedCharacter === character ? (accent === "amber" ? "text-amber-900" : accent === "emerald" ? "text-emerald-900" : "text-emerald-900") : "text-rose-800"}`}
+                className={
+                  typedCharacter === character
+                    ? `${baseClass} rounded-[0.2rem] bg-emerald-100 px-0.5 font-semibold text-emerald-950 ring-1 ring-emerald-200/80`
+                    : `${baseClass} rounded-[0.2rem] bg-rose-100 px-0.5 font-semibold text-rose-950 ring-1 ring-rose-200/80`
+                }
               >
                 {character === " " ? "\u00A0" : character}
               </span>
             );
           }
 
-          if (index === room.players[playerId].input.length) {
+          if (index === playerInput.length) {
             return (
               <span
                 key={`${playerId}-${character}-${index}`}
-                className={`${baseClass} rounded-sm ${accent === "amber" ? "bg-amber-200 text-amber-950" : accent === "emerald" ? "bg-emerald-200 text-emerald-950" : "bg-amber-200 text-amber-950"}`}
+                className={`${baseClass} rounded-sm ${accent === "amber" ? "bg-amber-200 text-amber-950 ring-1 ring-amber-300/70" : "bg-emerald-200 text-emerald-950 ring-1 ring-emerald-300/70"}`}
               >
                 {character === " " ? "\u00A0" : character}
               </span>
@@ -400,7 +448,7 @@ export default function TypingArena({
           ? "Partida en vivo"
           : "Lobby abierto";
 
-  const elapsedText = room.startedAt ? formatClock((room.finishedAt ?? Date.now()) - room.startedAt) : "00:00.00";
+  const elapsedText = room.startedAt ? formatClock((room.finishedAt ?? clockTick) - room.startedAt) : "00:00.00";
 
   return (
     <section className="relative flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden py-0 text-slate-900 sm:gap-2.5">
@@ -423,11 +471,30 @@ export default function TypingArena({
           <div className="flex flex-wrap gap-2 text-sm text-slate-800">
             <span>{room.roomCode}</span>
             <span>{connectionLabel}</span>
+            <span>{challengeMeta.title}</span>
+            <span
+              className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.22em] ${
+                challengeDifficulty.tone === "emerald"
+                  ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-700"
+                  : challengeDifficulty.tone === "amber"
+                    ? "border-amber-300/20 bg-amber-300/10 text-amber-700"
+                    : "border-rose-300/20 bg-rose-300/10 text-rose-700"
+              }`}
+            >
+              {challengeDifficulty.label}
+            </span>
           </div>
         </div>
 
         {isMasterView ? (
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setIsCatalogModalOpen(true)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Elegir texto (listado)
+            </button>
             <button
               type="button"
               onClick={startCountdown}
@@ -452,23 +519,12 @@ export default function TypingArena({
         <section className="flex min-h-0 flex-col rounded-3xl border border-slate-200 bg-white/80 p-2 shadow-[0_20px_60px_rgba(1,8,18,0.12)] backdrop-blur-xl sm:p-3 lg:p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-xs uppercase tracking-[0.35em] text-slate-700">Texto</p>
-              <h2 className="mt-1 text-lg font-semibold text-slate-900 sm:text-xl xl:text-2xl">{challengeTexts[room.selectedTextIndex].title}</h2>
+              <p className="text-xs uppercase tracking-[0.35em] text-slate-700">Texto activo</p>
+              <h2 className="mt-1 text-lg font-semibold text-slate-900 sm:text-xl xl:text-2xl">{challengeMeta.title}</h2>
+              <p className="mt-1 text-xs uppercase tracking-[0.28em] text-slate-500">
+                Dificultad {challengeDifficulty.label}
+              </p>
             </div>
-
-            {isMasterView ? (
-              <select
-                value={room.selectedTextIndex}
-                onChange={(event) => chooseText(Number(event.target.value))}
-                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none"
-              >
-                {challengeTexts.map((text, index) => (
-                  <option key={text.title} value={index} className="bg-white text-slate-700">
-                    Texto {index + 1}
-                  </option>
-                ))}
-              </select>
-            ) : null}
           </div>
 
           <div className="mt-2 flex min-h-0 flex-1 flex-col space-y-2 rounded-3xl border border-slate-200 bg-slate-50 p-2 leading-7 text-slate-700 sm:mt-3 sm:space-y-2.5 sm:p-3 lg:p-3.5 xl:p-4">
@@ -500,6 +556,7 @@ export default function TypingArena({
                       <div
                         className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] ${
                           accent === "emerald"
+
                             ? "border-(--accent-strong)/20 bg-(--accent-strong)/10 text-(--accent-strong)"
                             : "border-(--accent)/20 bg-(--accent)/10 text-(--accent)"
                         }`}
@@ -545,9 +602,15 @@ export default function TypingArena({
           {isMasterView ? null : (
             <div className="mt-2.5 flex min-h-0 flex-1 flex-col">
               <textarea
+                ref={typingInputRef}
                 value={room.players[activePlayerId].input}
                 onChange={handleTypingChange}
                 disabled={room.matchState !== "live" || clientRole !== activePlayerId}
+                onBlur={() => {
+                  if (room.matchState === "live" && clientRole === activePlayerId) {
+                    window.setTimeout(() => typingInputRef.current?.focus(), 0);
+                  }
+                }}
                 rows={4}
                 placeholder={room.matchState === "countdown" ? "Espera el inicio..." : "Escribe aquí"}
                 className="min-h-28 w-full flex-1 rounded-3xl border border-white/10 bg-slate-950/55 p-2.5 text-sm leading-6 text-white outline-none transition placeholder:text-slate-500 focus:border-amber-300/50 focus:ring-2 focus:ring-amber-300/20 disabled:cursor-not-allowed disabled:opacity-70 sm:p-3 sm:text-base sm:leading-7"
@@ -596,6 +659,17 @@ export default function TypingArena({
           <SponsorCarousel />
         </aside>
       </div>
+
+      <TextCatalogModal
+        open={isCatalogModalOpen}
+        texts={textCatalog}
+        selectedIndex={activeCatalogIndex}
+        onSelect={chooseText}
+        onClose={() => setIsCatalogModalOpen(false)}
+        loading={catalogLoading}
+        canManage={isMasterView}
+        onCatalogRefresh={refreshCatalog}
+      />
     </section>
   );
 }
@@ -783,7 +857,15 @@ function SponsorCarousel() {
             key={`${sponsor.name}-${index}`}
             className="flex h-28 w-48 shrink-0 items-center justify-center rounded-2xl border border-slate-100 bg-white px-4 py-3 sm:h-32 sm:w-56 lg:h-36 lg:w-64"
           >
-            <Image src={sponsor.image} alt={sponsor.name} width={360} height={220} className="h-20 w-auto object-contain sm:h-24 lg:h-28" />
+            <Image
+              src={sponsor.image}
+              alt={sponsor.name}
+              width={360}
+              height={220}
+              loading={index === 0 ? "eager" : "lazy"}
+              priority={index === 0}
+              className="h-20 w-auto object-contain sm:h-24 lg:h-28"
+            />
           </div>
         ))}
       </div>

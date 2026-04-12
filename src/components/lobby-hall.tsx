@@ -7,6 +7,8 @@ import Link from "next/link";
 import {
   createInitialRoomSnapshot,
   createRoomCode,
+  challengeTexts,
+  getChallengeDifficulty,
   normalizePlayerName,
   type ClientRole,
   type PlayerId,
@@ -23,7 +25,7 @@ export default function LobbyHall() {
   const [nickname, setNickname] = useState("Anfitrión");
   const [room, setRoom] = useState(() => createInitialRoomSnapshot(roomCode));
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const [socketUrl] = useState(defaultWsUrl);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -34,6 +36,8 @@ export default function LobbyHall() {
   const playerAHref = `/player/A?room=${encodedRoom}`;
   const playerBHref = `/player/B?room=${encodedRoom}`;
   const masterReady = room.players.A.ready && room.players.B.ready;
+  const activeChallenge = challengeTexts[room.selectedTextIndex];
+  const activeDifficulty = getChallengeDifficulty(activeChallenge);
 
   useEffect(() => {
     setRoom(createInitialRoomSnapshot(roomCode));
@@ -152,6 +156,23 @@ export default function LobbyHall() {
     });
   }
 
+  function chooseChallenge(selectedTextIndex: number) {
+    if (room.matchState !== "lobby") {
+      return;
+    }
+
+    setRoom((current) => ({
+      ...current,
+      selectedTextIndex,
+      updatedAt: Date.now(),
+    }));
+
+    send({
+      type: "set-text",
+      selectedTextIndex,
+    });
+  }
+
   function updatePlayerName(playerId: PlayerId, value: string) {
     const nextName = normalizePlayerName(value, room.players[playerId].name);
 
@@ -210,7 +231,7 @@ export default function LobbyHall() {
       ...current,
       matchState: "countdown",
       countdownEndsAt: Date.now() + 3000,
-      feed: updateRoomFeed(current.feed, "Cuenta regresiva iniciada: la ronda comienza en breve."),
+      feed: updateRoomFeed(current.feed, `Cuenta regresiva iniciada con "${activeChallenge.title}".`),
     }));
 
     send({ type: "start-countdown" });
@@ -274,6 +295,64 @@ export default function LobbyHall() {
               className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition placeholder:text-slate-500 focus:border-white/30"
             />
           </label>
+
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Texto de la partida</p>
+                <h2 className="mt-2 text-xl font-semibold text-white">{activeChallenge.title}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Antes de iniciar, elige el texto cargado desde la base de datos simulada para esta sala.
+                </p>
+              </div>
+              <span
+                className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.22em] ${
+                  activeDifficulty.tone === "emerald"
+                    ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100"
+                    : activeDifficulty.tone === "amber"
+                      ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                      : "border-rose-300/30 bg-rose-300/10 text-rose-100"
+                }`}
+              >
+                Dificultad {activeDifficulty.label}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              {challengeTexts.map((challenge, index) => {
+                const difficulty = getChallengeDifficulty(challenge);
+                const selected = index === room.selectedTextIndex;
+
+                return (
+                  <button
+                    key={challenge.id}
+                    type="button"
+                    onClick={() => chooseChallenge(index)}
+                    disabled={room.matchState !== "lobby"}
+                    className={`rounded-2xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      selected
+                        ? difficulty.tone === "emerald"
+                          ? "border-emerald-300/40 bg-emerald-300/15"
+                          : difficulty.tone === "amber"
+                            ? "border-amber-300/40 bg-amber-300/15"
+                            : "border-rose-300/40 bg-rose-300/15"
+                        : "border-white/10 bg-white/5 hover:bg-white/10"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-white">{challenge.title}</p>
+                      <span className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.22em] text-white">
+                        {difficulty.label}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-300">
+                      {challenge.text}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <LobbyPlayerCard
@@ -357,6 +436,8 @@ export default function LobbyHall() {
             <InfoTile label="Listo B" value={room.players.B.ready ? "Sí" : "No"} />
             <InfoTile label="Conectado A" value={room.players.A.connected ? "Sí" : "No"} />
             <InfoTile label="Conectado B" value={room.players.B.connected ? "Sí" : "No"} />
+            <InfoTile label="Texto" value={activeChallenge.title} />
+            <InfoTile label="Dificultad" value={activeDifficulty.label} />
           </div>
         </div>
 
@@ -364,8 +445,9 @@ export default function LobbyHall() {
           <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Checklist</p>
           <ol className="mt-4 space-y-3 text-sm leading-6 text-slate-300">
             <li>1. Comparte el código {roomCode} con quienes van a entrar.</li>
-            <li>2. Marca listos a los dos jugadores desde el lobby.</li>
-            <li>3. Abre el maestro y los dos jugadores en pestañas separadas.</li>
+            <li>2. Elige el texto y revisa la dificultad antes de iniciar.</li>
+            <li>3. Marca listos a los dos jugadores desde el lobby.</li>
+            <li>4. Abre el maestro y los dos jugadores en pestañas separadas.</li>
           </ol>
         </div>
 

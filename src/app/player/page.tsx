@@ -34,14 +34,10 @@ export default function PlayerJoinPage() {
               Entrar a la sala
             </h1>
             <p className="text-sm leading-6 text-slate-600">
-              Pega el código numérico y entra con una plaza asignada automáticamente.
+              Ingresa el código de la sala para ingresar.
             </p>
           </div>
 
-          <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,rgba(17,79,183,0.08),rgba(255,138,31,0.08))] p-4 text-sm text-slate-600">
-            <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Formato</p>
-            <p className="mt-1">Visual claro, fuerte contraste y acentos inspirados en el afiche.</p>
-          </div>
         </div>
 
         <div className="grid gap-4 rounded-[28px] border border-slate-200 bg-white/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] sm:p-5">
@@ -58,19 +54,16 @@ export default function PlayerJoinPage() {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Tu nombre</span>
+            <span className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Tu nombre y apellido</span>
             <input
               value={playerName}
               onChange={(event) => setPlayerName(event.target.value)}
-              placeholder="Ej. Sofía"
+              placeholder="Ej. Juan Pérez"
               maxLength={32}
               className="w-full rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-(--accent)"
             />
           </label>
 
-          <p className="text-xs leading-5 text-slate-500">
-            El nombre se enviará con tu entrada a la sala y luego podrá guardarse en la base de datos.
-          </p>
 
           <button
             type="button"

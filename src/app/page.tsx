@@ -9,12 +9,8 @@ export default function Home() {
           <div className="space-y-3">
             <p className="text-[11px] uppercase tracking-[0.45em] text-(--accent)">KBVS</p>
             <h1 className="max-w-xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-              Duelo de mecanografía con un lenguaje visual de afiche.
+              Duelo de mecanografía
             </h1>
-            <p className="max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-              Dos entradas, una sala compartida, y una identidad inspirada en el cartel del festival: limpia, geométrica y con
-              acentos naranja y azul.
-            </p>
           </div>
 
           <div className="flex flex-wrap gap-3 text-xs uppercase tracking-[0.28em] text-slate-500">
@@ -46,16 +42,7 @@ export default function Home() {
             </Link>
           </div>
 
-          <div className="grid gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600 sm:grid-cols-2">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Visual</p>
-              <p className="mt-1">Blanco, azul y naranja con bloques geométricos.</p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Composición</p>
-              <p className="mt-1">Paneles limpios, bordes suaves y jerarquía clara.</p>
-            </div>
-          </div>
+        
         </div>
       </section>
     </main>

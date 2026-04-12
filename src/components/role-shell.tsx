@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import TypingArena from "@/components/typing-arena";
 import { type ClientRole } from "@/lib/typing-room";
@@ -56,7 +56,7 @@ export default function RoleShell({
         </section>
       )}
 
-      <TypingArena roomCode={roomCode} initialRole={role} playerName={playerName} />
+      <TypingArena key={`${roomCode}:${role}:${playerName ?? ""}`} roomCode={roomCode} initialRole={role} playerName={playerName} />
     </main>
   );
 }

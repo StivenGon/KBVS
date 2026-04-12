@@ -41,6 +41,8 @@ For a basic multiplayer demo, open the dedicated routes in separate tabs:
 
 The lobby and master views now share a synchronized 3-second countdown before the race starts, and the player views stay locked until the room becomes live.
 
+Before each race, the host can pick the round text from the shared catalog and see its difficulty level reflected in the lobby, master view, and live arena.
+
 The landing page lives in `src/app/page.tsx`, the lobby in `src/app/lobby/page.tsx`, the master view in `src/app/master/page.tsx`, and the player routes in `src/app/player/`.
 
 ## What is next
@@ -68,4 +70,3 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-=======
