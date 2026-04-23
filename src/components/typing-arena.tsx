@@ -1,8 +1,10 @@
 'use client';
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import flisolLogo from "../../images/addons/Flisol 2026 rectangular.png";
 import auspicioDicosta from "../../images/auspicios/dicosta.png";
 import auspicioKaaSoft from "../../images/auspicios/kaa soft.png";
 import auspicioLaFortuna from "../../images/auspicios/la fortuna.png";
@@ -11,10 +13,12 @@ import auspicioSGCreaciones from "../../images/auspicios/sg creaciones.png";
 import {
   calculatePlayerStats,
   createInitialRoomSnapshot,
+  buildLeaderboard,
   formatClock,
   type ClientRole,
   type PlayerId,
   type RoomSnapshot,
+  type SkillTier,
   updateRoomFeed,
 } from "@/lib/typing-room";
 import TextCatalogModal from "@/components/text-catalog-modal";
@@ -219,6 +223,8 @@ export default function TypingArena({
   const isMasterView = clientRole === "master";
   const activeStats = activePlayerId === "A" ? statsA : statsB;
   const otherStats = otherPlayerId === "A" ? statsA : statsB;
+  const leaderboard = buildLeaderboard(room.history);
+  const topLeaderboardEntry = leaderboard[0] ?? null;
   const playerMetrics = [
     { label: "Progreso", value: `${activeStats.progress}%` },
     { label: "Errores", value: String(activeStats.mistakes) },
@@ -509,6 +515,12 @@ export default function TypingArena({
             >
               Reset
             </button>
+            <Link
+              href={`/clasificacion?room=${encodeURIComponent(room.roomCode)}`}
+              className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Ver clasificación
+            </Link>
           </div>
         ) : (
           <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">Espera el inicio</span>
@@ -657,6 +669,77 @@ export default function TypingArena({
           </div>
 
           <SponsorCarousel />
+          {isMasterView && leaderboard.length > 0 ? (
+            <section className="rounded-3xl border border-slate-200 bg-white p-3 shadow-[0_20px_60px_rgba(1,8,18,0.12)] sm:p-3.5">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.34em] text-slate-700">Clasificación general</p>
+                  <h3 className="mt-1 text-sm font-semibold text-slate-950">Ranking de destreza</h3>
+                </div>
+                {topLeaderboardEntry ? (
+                  <span className="rounded-full border border-(--accent-strong)/20 bg-(--accent-strong)/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.24em] text-(--accent-strong)">
+                    Líder: {topLeaderboardEntry.name}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                {leaderboard.length ? (
+                  <div className="max-h-80 overflow-auto">
+                    <table className="min-w-full border-separate border-spacing-0 text-left text-[11px] sm:text-xs">
+                      <thead className="sticky top-0 z-10 bg-slate-100 text-slate-600">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">#</th>
+                          <th className="px-3 py-2 font-medium">Jugador</th>
+                          <th className="px-3 py-2 font-medium">Nivel</th>
+                          <th className="px-3 py-2 font-medium">Puntos</th>
+                          <th className="px-3 py-2 font-medium">Victorias</th>
+                          <th className="px-3 py-2 font-medium">WPM</th>
+                          <th className="px-3 py-2 font-medium">Precisión</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {leaderboard.map((entry, index) => {
+                          const isTopEntry = index === 0;
+
+                          return (
+                            <tr
+                              key={entry.name}
+                              className={isTopEntry ? "bg-(--accent-strong)/5 text-slate-950" : "border-t border-slate-200"}
+                            >
+                              <td className="px-3 py-2 align-middle font-semibold text-slate-700">{index + 1}</td>
+                              <td className="px-3 py-2 align-middle">
+                                <div className="flex items-center gap-2">
+                                  <span className="max-w-28 truncate font-medium text-slate-950">{entry.name}</span>
+                                  {isTopEntry ? (
+                                    <span className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-700">
+                                      Mejor
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 align-middle">
+                                <SkillBadge tier={entry.skillTier} />
+                              </td>
+                              <td className="px-3 py-2 align-middle font-semibold text-slate-900">{entry.skillScore}</td>
+                              <td className="px-3 py-2 align-middle text-slate-700">
+                                {entry.wins}/{entry.matches}
+                              </td>
+                              <td className="px-3 py-2 align-middle text-slate-700">{entry.averageWpm}</td>
+                              <td className="px-3 py-2 align-middle text-slate-700">{entry.averageAccuracy}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="px-3 py-5 text-sm text-slate-600">Todavía no hay partidas registradas.</div>
+                )}
+              </div>
+            </section>
+          ) : null}
+          <FlisolBanner />
         </aside>
       </div>
 
@@ -704,6 +787,23 @@ function InfoTile({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] uppercase tracking-[0.32em] text-slate-700">{label}</p>
       <p className="mt-2 wrap-break-word text-sm font-semibold leading-5 text-slate-950 sm:text-base">{value}</p>
     </div>
+  );
+}
+
+function SkillBadge({ tier }: { tier: SkillTier }) {
+  const toneClasses: Record<SkillTier, string> = {
+    novato: "border-slate-300 bg-slate-100 text-slate-700",
+    aprendiz: "border-amber-300/30 bg-amber-300/10 text-amber-700",
+    competente: "border-emerald-300/30 bg-emerald-300/10 text-emerald-700",
+    experto: "border-sky-300/30 bg-sky-300/10 text-sky-700",
+    maestro: "border-(--accent-strong)/20 bg-(--accent-strong)/10 text-(--accent-strong)",
+    leyenda: "border-rose-300/30 bg-rose-300/10 text-rose-700",
+  };
+
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] ${toneClasses[tier]}`}>
+      {tier}
+    </span>
   );
 }
 
@@ -868,6 +968,16 @@ function SponsorCarousel() {
             />
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function FlisolBanner() {
+  return (
+    <div className="w-full overflow-hidden rounded-3xl border border-slate-200 bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.95)] sm:p-4">
+      <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white px-3 py-2 shadow-[0_12px_30px_rgba(15,34,64,0.08)]">
+        <Image src={flisolLogo} alt="FLISOL 2026" className="h-auto w-full" priority />
       </div>
     </div>
   );

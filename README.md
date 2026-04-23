@@ -54,6 +54,28 @@ The scaffold is ready for the next implementation step:
 - a master dashboard that follows the live typing session
 - historical rankings and per-player statistics
 
+## Database Setup
+
+The repository now includes an installable MySQL schema in [database/install.sql](database/install.sql). It creates the `kbvs` database, the `text_difficulty` and `textos` tables, and seeds the starter catalog used by the app.
+
+If you clone the project onto another device, import that file into MySQL first, then configure the connection variables. You can start from [.env.example](.env.example) and copy the values into a local `.env.local` file:
+
+```bash
+mysql -u root -p < database/install.sql
+```
+
+If you prefer MySQL Workbench, open [database/install.sql](database/install.sql) and run it against your local server.
+
+The app reads these environment variables:
+
+- `MYSQL_HOST`
+- `MYSQL_PORT`
+- `MYSQL_USER`
+- `MYSQL_PASSWORD`
+- `MYSQL_DATABASE`
+
+If they are not set, the app falls back to `localhost`, port `3306`, user `root`, password `123456`, and database `kbvs`.
+
 This project uses `next/font` to load Geist for the interface.
 
 ## Learn More

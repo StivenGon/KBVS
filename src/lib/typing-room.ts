@@ -31,6 +31,22 @@ export type HistoryEntry = {
   accuracy: number;
   wpm: number;
   winner: boolean;
+  score: number;
+};
+
+export type SkillTier = "novato" | "aprendiz" | "competente" | "experto" | "maestro" | "leyenda";
+
+export type LeaderboardEntry = {
+  name: string;
+  matches: number;
+  wins: number;
+  bestScore: number;
+  averageScore: number;
+  averageWpm: number;
+  averageAccuracy: number;
+  averageErrors: number;
+  skillScore: number;
+  skillTier: SkillTier;
 };
 
 export type RoomSnapshot = {
@@ -125,11 +141,7 @@ export const initialFeed = [
   "El historial de resultados se guardará cuando la base de datos esté conectada.",
 ];
 
-export const initialHistory: HistoryEntry[] = [
-  { name: "Mara", time: "01:22.41", errors: 3, accuracy: 97, wpm: 58, winner: true },
-  { name: "Leo", time: "01:31.08", errors: 5, accuracy: 94, wpm: 52, winner: false },
-  { name: "Nora", time: "01:18.77", errors: 2, accuracy: 98, wpm: 61, winner: true },
-];
+export const initialHistory: HistoryEntry[] = [];
 
 export function createRoomCode() {
   const fragments = Array.from({ length: 4 }, () => Math.floor(Math.random() * 10).toString());
@@ -256,5 +268,141 @@ export function createCompletionEntry(name: string, stats: PlayerStats, winner: 
     accuracy: stats.accuracy,
     wpm: stats.wpm,
     winner,
+    score: calculateParticipantScore(stats, winner),
   };
+}
+
+export function calculateParticipantScore(stats: PlayerStats, winner: boolean) {
+  const rawScore = stats.wpm * 2.2 + stats.accuracy * 1.15 - stats.mistakes * 4 + stats.progress * 0.25 + (winner ? 24 : 0);
+
+  return Math.max(0, Math.round(rawScore));
+}
+
+export function getSkillTier(score: number): SkillTier {
+  if (score >= 200) {
+    return "leyenda";
+  }
+
+  if (score >= 160) {
+    return "maestro";
+  }
+
+  if (score >= 125) {
+    return "experto";
+  }
+
+  if (score >= 90) {
+    return "competente";
+  }
+
+  if (score >= 60) {
+    return "aprendiz";
+  }
+
+  return "novato";
+}
+
+export function buildLeaderboard(history: HistoryEntry[]): LeaderboardEntry[] {
+  const grouped = new Map<
+    string,
+    {
+      name: string;
+      matches: number;
+      wins: number;
+      scoreTotal: number;
+      bestScore: number;
+      wpmTotal: number;
+      accuracyTotal: number;
+      errorsTotal: number;
+    }
+  >();
+
+  for (const entry of history) {
+    if (!Number.isFinite(entry.score)) {
+      continue;
+    }
+
+    if (!Number.isFinite(entry.wpm) || !Number.isFinite(entry.accuracy) || !Number.isFinite(entry.errors)) {
+      continue;
+    }
+
+    const key = entry.name.trim();
+
+    if (!key) {
+      continue;
+    }
+
+    const current = grouped.get(key) ?? {
+      name: key,
+      matches: 0,
+      wins: 0,
+      scoreTotal: 0,
+      bestScore: 0,
+      wpmTotal: 0,
+      accuracyTotal: 0,
+      errorsTotal: 0,
+    };
+
+    current.matches += 1;
+    current.wins += entry.winner ? 1 : 0;
+    current.scoreTotal += entry.score;
+    current.bestScore = Math.max(current.bestScore, entry.score);
+    current.wpmTotal += entry.wpm;
+    current.accuracyTotal += entry.accuracy;
+    current.errorsTotal += entry.errors;
+
+    grouped.set(key, current);
+  }
+
+  return [...grouped.values()]
+    .map((entry) => {
+      const averageScore = entry.scoreTotal / entry.matches;
+      const averageWpm = entry.wpmTotal / entry.matches;
+      const averageAccuracy = entry.accuracyTotal / entry.matches;
+      const averageErrors = entry.errorsTotal / entry.matches;
+      if (![averageScore, averageWpm, averageAccuracy, averageErrors].every(Number.isFinite)) {
+        return null;
+      }
+
+      const skillScore = Math.round(
+        averageScore + entry.wins * 16 + averageWpm * 0.65 + averageAccuracy * 0.2 - averageErrors * 3,
+      );
+
+      if (!Number.isFinite(skillScore)) {
+        return null;
+      }
+
+      return {
+        name: entry.name,
+        matches: entry.matches,
+        wins: entry.wins,
+        bestScore: entry.bestScore,
+        averageScore: Math.round(averageScore),
+        averageWpm: Math.round(averageWpm),
+        averageAccuracy: Math.round(averageAccuracy),
+        averageErrors: Number(averageErrors.toFixed(1)),
+        skillScore,
+        skillTier: getSkillTier(skillScore),
+      } satisfies LeaderboardEntry;
+    })
+    .filter((entry): entry is LeaderboardEntry => entry !== null)
+    .sort((left, right) => {
+      if (right.skillScore !== left.skillScore) {
+        return right.skillScore - left.skillScore;
+      }
+
+      if (right.wins !== left.wins) {
+        return right.wins - left.wins;
+      }
+
+      if (right.averageWpm !== left.averageWpm) {
+        return right.averageWpm - left.averageWpm;
+      }
+
+      if (right.averageAccuracy !== left.averageAccuracy) {
+        return right.averageAccuracy - left.averageAccuracy;
+      }
+
+      return left.name.localeCompare(right.name, "es");
+    });
 }

@@ -1,8 +1,16 @@
+import Image from "next/image";
 import Link from "next/link";
+
+import flisolLogo from "../../images/addons/Flisol 2026 rectangular.png";
 
 export default function Home() {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl items-center px-3 py-4 sm:px-4 lg:px-6">
+    <main className="relative mx-auto flex min-h-screen w-full max-w-5xl items-center px-3 py-4 sm:px-4 lg:px-6">
+      <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(92vw,18rem)] -translate-x-1/2 sm:w-[min(90vw,22rem)] lg:w-[min(88vw,26rem)]">
+        <div className="overflow-hidden rounded-3xl border border-white/60 bg-white/75 px-3 py-2 shadow-[0_18px_50px_rgba(15,34,64,0.12)] backdrop-blur-md">
+          <Image src={flisolLogo} alt="FLISOL 2026" className="h-auto w-full" priority />
+        </div>
+      </div>
       <section className="relative grid w-full gap-6 overflow-hidden rounded-[36px] border border-white/60 bg-white/85 p-5 shadow-[0_24px_80px_rgba(15,34,64,0.18)] backdrop-blur-xl sm:p-7 lg:grid-cols-[1.15fr_0.85fr] lg:p-8">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,var(--accent),var(--accent-strong))]" />
         <div className="space-y-5">
@@ -39,6 +47,12 @@ export default function Home() {
               className="rounded-[22px] border border-(--accent)/20 bg-(--accent) px-5 py-4 text-sm font-semibold text-white transition hover:brightness-105"
             >
               Entrar como jugador
+            </Link>
+            <Link
+              href="/clasificacion"
+              className="rounded-[22px] border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Ver clasificación
             </Link>
           </div>
 

@@ -331,13 +331,18 @@ function maybeFinishMatch(room: RoomSnapshot) {
   room.finishedAt = now;
 
   const winnerStats = winner === "A" ? statsA : statsB;
+  const loserStats = winner === "A" ? statsB : statsA;
   const winnerName = winner === "A" ? room.players.A.name : room.players.B.name;
+  const loserName = winner === "A" ? room.players.B.name : room.players.A.name;
 
-  room.feed = updateRoomFeed(room.feed, `${winnerName} ganó la sala ${room.roomCode}.`);
+  const resolveParticipantName = (name: string, playerId: PlayerId) => name.trim() || `Jugador ${playerId}`;
+
+  room.feed = updateRoomFeed(room.feed, `${resolveParticipantName(winnerName, winner)} ganó la sala ${room.roomCode}.`);
   room.history = [
-    createCompletionEntry(winnerName, winnerStats, true),
+    createCompletionEntry(resolveParticipantName(winnerName, winner), winnerStats, true),
+    createCompletionEntry(resolveParticipantName(loserName, winner === "A" ? "B" : "A"), loserStats, false),
     ...room.history,
-  ].slice(0, 5);
+  ].slice(0, 200);
   room.updatedAt = now;
 }
 
