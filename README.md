@@ -11,25 +11,42 @@ The current workspace includes a playable front-end prototype with:
 
 ## Getting Started
 
-First, run the WebSocket relay in one terminal:
-
-```bash
-npm run websocket:dev
-```
-
-Then run the Next.js development server in another terminal:
+Run the development stack:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
+That command now starts both services:
+
+- Next.js on port `3000`
+- WebSocket relay on port `8787`
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+## LAN Multiplayer (No Internet)
+
+If you are playing on two devices connected to the same Wi-Fi router (without internet), use the host PC Wi-Fi IPv4 address on both devices.
+
+Host checklist:
+
+1. Start everything once on the host PC with `npm run dev`.
+2. Find the host IPv4 (for example with `ipconfig`) and share that IP with the second device.
+3. Open the game from that host IP on both devices.
+
+Example:
+
+- `http://<HOST_WIFI_IP>:3000/lobby`
+- `http://<HOST_WIFI_IP>:3000/master`
+- `http://<HOST_WIFI_IP>:3000/player/A`
+- `http://<HOST_WIFI_IP>:3000/player/B`
+
+Important:
+
+- Do not use `localhost` on phones or other devices.
+- Keep `npm run dev` running on the host PC during the match.
+- Ensure Windows firewall allows inbound TCP ports `3000` and `8787` on private networks.
+- If `npm run websocket:dev` is started twice, the second start now exits cleanly when it detects an active relay on port `8787`.
 
 For a basic multiplayer demo, open the dedicated routes in separate tabs:
 

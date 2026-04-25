@@ -1,6 +1,10 @@
 @import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 :root {
+  --font-geist-sans: "Geist Variable";
+  --font-geist-mono: "Geist Mono Variable";
   --background: #f4f0ea;
   --foreground: #0f2240;
   --muted: #5d6b82;
@@ -119,5 +123,5 @@ body {
 }
 
 .sponsor-marquee {
-  animation: sponsor-marquee 18s linear infinite;
+  animation: sponsor-marquee 40s linear infinite;
 }

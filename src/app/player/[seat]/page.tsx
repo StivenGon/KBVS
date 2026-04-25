@@ -12,8 +12,9 @@ export default async function PlayerSeatPage({
 }) {
   const { seat } = await params;
   const { room, name } = await searchParams;
+  const normalizedSeat = seat.toUpperCase();
 
-  if (seat !== "A" && seat !== "B") {
+  if (normalizedSeat !== "A" && normalizedSeat !== "B") {
     notFound();
   }
 
@@ -23,9 +24,9 @@ export default async function PlayerSeatPage({
 
   return (
     <RoleShell
-      role={seat}
-      title={`Vista jugador ${seat}`}
-      description={`Esta ruta está dedicada al jugador ${seat}. La arena comparte la misma sala WebSocket, pero esta pestaña entra con su plaza y control propios.`}
+      role={normalizedSeat as "A" | "B"}
+      title={`Vista jugador ${normalizedSeat}`}
+      description={`Esta ruta está dedicada al jugador ${normalizedSeat}. La arena comparte la misma sala WebSocket, pero esta pestaña entra con su plaza y control propios.`}
       roomCode={room}
       playerName={name}
       showIntro={false}

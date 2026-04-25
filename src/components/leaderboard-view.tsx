@@ -1,14 +1,53 @@
 'use client';
 
 import Image from "next/image";
+import { useEffect, useState } from "react";
 
 import flisolLogo from "../../images/addons/Flisol 2026 rectangular.png";
 import auspicioDicosta from "../../images/auspicios/dicosta.png";
 import auspicioKaaSoft from "../../images/auspicios/kaa soft.png";
 import auspicioLaFortuna from "../../images/auspicios/la fortuna.png";
 import auspicioSGCreaciones from "../../images/auspicios/sg creaciones.png";
+import auspiciosin_fronteras from "../../images/auspicios/sin_fronteras.png";
+import auspiciosilvi_modas from "../../images/auspicios/silvi_modas.png";
+import auspiciosericentro_tajy from "../../images/auspicios/servicentro_tajy.png";
+import auspiciopizzeriacampeonato from "../../images/auspicios/pizzeria_campeonato.png";
+import auspiciomontanasierra from "../../images/auspicios/montana.png";
+import auspiciomd_veterinaria from "../../images/auspicios/md_veterinaria.png";
+import auspiciomabuplay from "../../images/auspicios/mabuplay.png";
+import auspiciolapacho from "../../images/auspicios/lapachos.png";
+import auspiciojtconsulting from "../../images/auspicios/jt_consulting.png";
+import auspiciodrvseguros from "../../images/auspicios/drv_seguros.png";
+import auspicioagrope_santarita from "../../images/auspicios/agrope_santa_rita.png";
+
 
 import { buildLeaderboard, type HistoryEntry, type SkillTier } from "@/lib/typing-room";
+
+interface MatchResult {
+  player_name: string;
+  avg_accuracy: number;
+  total_wpm: number;
+  matches: number;
+  wins: number;
+}
+
+const sponsorAssets = [
+  { name: "Dicosta", image: auspicioDicosta },
+  { name: "Kaa Soft", image: auspicioKaaSoft },
+  { name: "La Fortuna", image: auspicioLaFortuna },
+  { name: "SG Creaciones", image: auspicioSGCreaciones },
+  { name: "Sin_Fronteras", image: auspiciosin_fronteras },
+  { name: "Silvi_Modas", image: auspiciosilvi_modas },
+  { name: "Sericentro_Tajy", image: auspiciosericentro_tajy },
+  { name: "Pizzería_Campeonato", image: auspiciopizzeriacampeonato },
+  { name: "Montaña_Sierra", image: auspiciomontanasierra },
+  { name: "MD_Veterinaria", image: auspiciomd_veterinaria },
+  { name: "MabuPlay", image: auspiciomabuplay },
+  { name: "Lapachos", image: auspiciolapacho },
+  { name: "JT_Consulting", image: auspiciojtconsulting },
+  { name: "DRV_Seguros", image: auspiciodrvseguros },
+  { name: "Agrope_Santarita", image: auspicioagrope_santarita },
+];
 
 const featuredHistory: HistoryEntry[] = [
   {
@@ -22,15 +61,36 @@ const featuredHistory: HistoryEntry[] = [
   },
 ];
 
-const sponsorAssets = [
-  { name: "Dicosta", image: auspicioDicosta },
-  { name: "Kaa Soft", image: auspicioKaaSoft },
-  { name: "La Fortuna", image: auspicioLaFortuna },
-  { name: "SG Creaciones", image: auspicioSGCreaciones },
-];
-
 export default function LeaderboardView() {
-  const leaderboard = buildLeaderboard(featuredHistory);
+  const [leaderboardData, setLeaderboardData] = useState<HistoryEntry[]>(featuredHistory);
+
+  useEffect(() => {
+    const fetchResults = async () => {
+      try {
+        const response = await fetch("/api/admin/match-results");
+        const data = await response.json();
+
+        if (data.success && data.results) {
+          const entries: HistoryEntry[] = (data.results as MatchResult[]).map((result: MatchResult) => ({
+            name: result.player_name,
+            time: "00:00.00",
+            errors: 0,
+            accuracy: Math.round(result.avg_accuracy || 0),
+            wpm: Math.round((result.total_wpm || 0) / (result.matches || 1)),
+            winner: result.wins > 0,
+            score: (result.wins || 0) * 100 + Math.round(result.avg_accuracy || 0),
+          }));
+          setLeaderboardData(entries);
+        }
+      } catch (error) {
+        console.error("Error fetching leaderboard:", error);
+      }
+    };
+
+    void fetchResults();
+  }, []);
+
+  const leaderboard = buildLeaderboard(leaderboardData);
   const podium = leaderboard.slice(0, 3);
 
   return (

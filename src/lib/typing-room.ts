@@ -22,6 +22,7 @@ export type PlayerSnapshot = {
   ready: boolean;
   input: string;
   connected: boolean;
+  typingVersion: number;
 };
 
 export type HistoryEntry = {
@@ -172,12 +173,14 @@ export function createInitialRoomSnapshot(roomCode = createRoomCode()): RoomSnap
         ready: false,
         input: "",
         connected: false,
+        typingVersion: 0,
       },
       B: {
         name: "",
         ready: false,
         input: "",
         connected: false,
+        typingVersion: 0,
       },
     },
     feed: [...initialFeed],

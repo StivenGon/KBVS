@@ -2,19 +2,31 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import flisolLogo from "../../images/addons/Flisol 2026 rectangular.png";
 import auspicioDicosta from "../../images/auspicios/dicosta.png";
 import auspicioKaaSoft from "../../images/auspicios/kaa soft.png";
 import auspicioLaFortuna from "../../images/auspicios/la fortuna.png";
 import auspicioSGCreaciones from "../../images/auspicios/sg creaciones.png";
+import auspiciosin_fronteras from "../../images/auspicios/sin_fronteras.png";
+import auspiciosilvi_modas from "../../images/auspicios/silvi_modas.png";
+import auspiciosericentro_tajy from "../../images/auspicios/servicentro_tajy.png";
+import auspiciopizzeriacampeonato from "../../images/auspicios/pizzeria_campeonato.png";
+import auspiciomontanasierra from "../../images/auspicios/montana.png";
+import auspiciomd_veterinaria from "../../images/auspicios/md_veterinaria.png";
+import auspiciomabuplay from "../../images/auspicios/mabuplay.png";
+import auspiciolapacho from "../../images/auspicios/lapachos.png";
+import auspiciojtconsulting from "../../images/auspicios/jt_consulting.png";
+import auspiciodrvseguros from "../../images/auspicios/drv_seguros.png";
+import auspicioagrope_santarita from "../../images/auspicios/agrope_santa_rita.png";
 
 import {
   calculatePlayerStats,
   createInitialRoomSnapshot,
   buildLeaderboard,
   formatClock,
+  winnerFromSnapshot,
   type ClientRole,
   type PlayerId,
   type RoomSnapshot,
@@ -23,6 +35,7 @@ import {
 } from "@/lib/typing-room";
 import TextCatalogModal from "@/components/text-catalog-modal";
 import { buildFallbackCatalog, type CatalogText } from "@/lib/text-catalog";
+import { resolveTypingWebSocketUrl } from "@/lib/typing-ws-url";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
@@ -31,22 +44,18 @@ const sponsorAssets = [
   { name: "Kaa Soft", image: auspicioKaaSoft },
   { name: "La Fortuna", image: auspicioLaFortuna },
   { name: "SG Creaciones", image: auspicioSGCreaciones },
+  { name: "Sin_Fronteras", image: auspiciosin_fronteras },
+  { name: "Silvi_Modas", image: auspiciosilvi_modas },
+  { name: "Sericentro_Tajy", image: auspiciosericentro_tajy },
+  { name: "Pizzería_Campeonato", image: auspiciopizzeriacampeonato },
+  { name: "Montaña_Sierra", image: auspiciomontanasierra },
+  { name: "MD_Veterinaria", image: auspiciomd_veterinaria },
+  { name: "MabuPlay", image: auspiciomabuplay },
+  { name: "Lapachos", image: auspiciolapacho },
+  { name: "JT_Consulting", image: auspiciojtconsulting },
+  { name: "DRV_Seguros", image: auspiciodrvseguros },
+  { name: "Agrope_Santarita", image: auspicioagrope_santarita },
 ];
-
-function resolveWebSocketUrl() {
-  const envUrl = process.env.NEXT_PUBLIC_TYPING_WS_URL;
-
-  if (envUrl) {
-    return envUrl;
-  }
-
-  if (typeof window === "undefined") {
-    return "ws://localhost:8787";
-  }
-
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.hostname}:8787`;
-}
 
 export default function TypingArena({
   roomCode,
@@ -62,15 +71,28 @@ export default function TypingArena({
   const controlledPlayer: PlayerId = initialRole === "master" ? "A" : initialRole;
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [clockTick, setClockTick] = useState(() => Date.now());
-  const [socketUrl] = useState(() => resolveWebSocketUrl());
+  const [socketUrl, setSocketUrl] = useState("");
   const [textCatalog, setTextCatalog] = useState<CatalogText[]>(() => buildFallbackCatalog());
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+  const [isSponsorCarouselPaused, setIsSponsorCarouselPaused] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const typingInputRef = useRef<HTMLTextAreaElement | null>(null);
   const mountedRef = useRef(false);
   const playerMetricsRef = useRef<Array<{ label: string; value: string }>>([]);
+  const localTypingVersionRef = useRef(0);
+  const optimisticInputRef = useRef("");
+  const queuedTypingRef = useRef<{ input: string; typingVersion: number } | null>(null);
+  const typingSendRafRef = useRef<number | null>(null);
+  const lastSavedMatchRef = useRef<string | null>(null);
+  const bufferedRemoteTypingRef = useRef<
+    Partial<Record<PlayerId, { input: string; typingVersion: number; updatedAt: number }>>
+  >({});
+  const remoteTypingFlushTimerRef = useRef<number | null>(null);
+  const queueBufferedRemoteTypingFnRef = useRef(
+    (_playerId: PlayerId, _input: string, _typingVersion: number, _updatedAt: number) => {},
+  );
 
   const activeCatalogIndex = Math.min(room.selectedTextIndex, Math.max(0, textCatalog.length - 1));
   const challengeMeta = textCatalog[activeCatalogIndex] ?? textCatalog[0];
@@ -78,6 +100,14 @@ export default function TypingArena({
   const challengeDifficulty = challengeMeta.difficulty;
   const activePlayerId = clientRole === "master" ? controlledPlayer : clientRole;
   const otherPlayerId: PlayerId = activePlayerId === "A" ? "B" : "A";
+  const isLocalPlayer = clientRole !== "master" && clientRole === activePlayerId;
+
+  queueBufferedRemoteTypingFnRef.current = queueBufferedRemoteTyping;
+
+  useEffect(() => {
+    localTypingVersionRef.current = 0;
+    optimisticInputRef.current = "";
+  }, [activePlayerId, roomCode]);
 
   const refreshCatalog = useCallback(async () => {
     setCatalogLoading(true);
@@ -103,6 +133,8 @@ export default function TypingArena({
 
   useEffect(() => {
     mountedRef.current = true;
+    const resolvedSocketUrl = resolveTypingWebSocketUrl();
+    setSocketUrl(resolvedSocketUrl);
 
     const connect = () => {
       if (!mountedRef.current) {
@@ -110,7 +142,7 @@ export default function TypingArena({
       }
 
       setConnectionState("connecting");
-      const socket = new WebSocket(socketUrl);
+      const socket = new WebSocket(resolvedSocketUrl);
       socketRef.current = socket;
 
       socket.onopen = () => {
@@ -127,11 +159,106 @@ export default function TypingArena({
         try {
           const payload = JSON.parse(event.data as string) as
             | { type: "room-snapshot"; room: RoomSnapshot }
+            | {
+                type: "typing-update";
+                roomCode: string;
+                playerId: PlayerId;
+                input: string;
+                typingVersion: number;
+                updatedAt: number;
+              }
             | { type: "server-note"; message: string }
             | { type: "error"; message: string };
 
           if (payload.type === "room-snapshot") {
-            setRoom(payload.room);
+            setRoom((current) => {
+              const snapshot = payload.room;
+              const serverPlayer = snapshot.players[activePlayerId];
+              const serverTypingVersion = serverPlayer.typingVersion;
+
+              if (!isLocalPlayer) {
+                localTypingVersionRef.current = serverTypingVersion;
+                optimisticInputRef.current = serverPlayer.input;
+                return snapshot;
+              }
+
+              const localTypingVersion = localTypingVersionRef.current;
+
+              if (serverTypingVersion < localTypingVersion) {
+                return {
+                  ...snapshot,
+                  players: {
+                    ...snapshot.players,
+                    [activePlayerId]: {
+                      ...serverPlayer,
+                      input: optimisticInputRef.current || current.players[activePlayerId].input,
+                      typingVersion: localTypingVersion,
+                    },
+                  },
+                };
+              }
+
+              localTypingVersionRef.current = serverTypingVersion;
+              optimisticInputRef.current = serverPlayer.input;
+
+              return snapshot;
+            });
+          }
+
+          if (payload.type === "typing-update") {
+            if (isLocalPlayer && payload.playerId !== activePlayerId) {
+              queueBufferedRemoteTypingFnRef.current(
+                payload.playerId,
+                payload.input,
+                payload.typingVersion,
+                payload.updatedAt,
+              );
+              return;
+            }
+
+            setRoom((current) => {
+              if (payload.roomCode !== current.roomCode) {
+                return current;
+              }
+
+              const currentPlayer = current.players[payload.playerId];
+
+              if (payload.typingVersion < currentPlayer.typingVersion) {
+                return current;
+              }
+
+              if (payload.playerId === activePlayerId && isLocalPlayer) {
+                const localTypingVersion = localTypingVersionRef.current;
+
+                if (payload.typingVersion < localTypingVersion) {
+                  return current;
+                }
+
+                localTypingVersionRef.current = payload.typingVersion;
+                optimisticInputRef.current = payload.input;
+              }
+
+              if (
+                payload.typingVersion === currentPlayer.typingVersion
+                && payload.input === currentPlayer.input
+                && payload.updatedAt <= current.updatedAt
+              ) {
+                return current;
+              }
+
+              return {
+                ...current,
+                players: {
+                  ...current.players,
+                  [payload.playerId]: {
+                    ...currentPlayer,
+                    input: payload.input,
+                    typingVersion: payload.typingVersion,
+                  },
+                },
+                updatedAt: payload.updatedAt,
+              };
+            });
           }
 
           if (payload.type === "error") {
@@ -174,9 +301,22 @@ export default function TypingArena({
         window.clearTimeout(reconnectTimerRef.current);
       }
 
+      if (typingSendRafRef.current !== null) {
+        window.cancelAnimationFrame(typingSendRafRef.current);
+        typingSendRafRef.current = null;
+      }
+
+      if (remoteTypingFlushTimerRef.current !== null) {
+        window.clearTimeout(remoteTypingFlushTimerRef.current);
+        remoteTypingFlushTimerRef.current = null;
+      }
+
+      bufferedRemoteTypingRef.current = {};
+      queuedTypingRef.current = null;
+
       socketRef.current?.close();
     };
-  }, [clientRole, playerName, roomCode, socketUrl]);
+  }, [activePlayerId, clientRole, isLocalPlayer, playerName, roomCode]);
 
   useEffect(() => {
     void refreshCatalog();
@@ -195,7 +335,59 @@ export default function TypingArena({
   }, [room.matchState, room.countdownEndsAt]);
 
   useEffect(() => {
-    if (room.matchState !== "live" || clientRole !== activePlayerId) {
+    if (room.matchState !== "finished" || !isLocalPlayer) {
+      return;
+    }
+
+    const matchKey = `${room.roomCode}:${room.startedAt ?? 0}:${room.finishedAt ?? 0}:${activePlayerId}`;
+
+    if (lastSavedMatchRef.current === matchKey) {
+      return;
+    }
+
+    const winnerPlayerId = winnerFromSnapshot(room, room.finishedAt ?? Date.now());
+
+    if (!winnerPlayerId) {
+      return;
+    }
+
+    lastSavedMatchRef.current = matchKey;
+
+    const saveMatchResult = async () => {
+      const playerStats = calculatePlayerStats(
+        room.players[activePlayerId].input,
+        challengeText,
+        room.startedAt ?? 0,
+        room.finishedAt ?? Date.now(),
+        room.finishedAt
+      );
+
+      const isWinner = winnerPlayerId === activePlayerId;
+
+      try {
+        await fetch("/api/admin/match-result", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            playerName: playerName || `Jugador ${activePlayerId}`,
+            wpm: playerStats.wpm,
+            accuracy: playerStats.accuracy,
+            errors: playerStats.mistakes,
+            matchTime: (room.finishedAt ?? 0) - (room.startedAt ?? 0),
+            winner: isWinner,
+          }),
+        });
+      } catch (error) {
+        lastSavedMatchRef.current = null;
+        console.error("Error saving match result:", error);
+      }
+    };
+
+    void saveMatchResult();
+  }, [room.matchState, activePlayerId, isLocalPlayer, playerName, challengeText, room]);
+
+  useEffect(() => {
+    if (room.matchState !== "live" || !isLocalPlayer) {
       return;
     }
 
@@ -204,7 +396,7 @@ export default function TypingArena({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [activePlayerId, clientRole, room.matchState, room.players[activePlayerId].input]);
+  }, [activePlayerId, isLocalPlayer, room.matchState]);
 
   const statsA = calculatePlayerStats(
     room.players.A.input,
@@ -244,14 +436,24 @@ export default function TypingArena({
   const roleDescription = isMasterView
     ? "Control total de la sala, preparación de la ronda y seguimiento de ambos jugadores."
     : "Interfaz reducida para competir, escribir y vigilar sólo la información esencial de la partida.";
+  const connectionTarget = socketUrl || "relay";
   const connectionLabel =
     connectionState === "connected"
-      ? "Conectado"
+      ? `Conectado a ${connectionTarget}`
       : connectionState === "connecting"
-        ? "Conectando a la sala WebSocket"
+        ? `Conectando a ${connectionTarget}`
         : connectionState === "error"
-          ? "Conexión con error"
-          : "Desconectado; intentando reconectar";
+          ? `Conexión con error en ${connectionTarget}`
+          : `Desconectado de ${connectionTarget}; intentando reconectar`;
+
+  const renderedTextByPlayer = useMemo(
+    () => ({
+      A: renderChallengeRichText(challengeText, room.players.A.input, "A"),
+      B: renderChallengeRichText(challengeText, room.players.B.input, "B"),
+      BAmber: renderChallengeRichText(challengeText, room.players.B.input, "B", "amber"),
+    }),
+    [challengeText, room.players.A.input, room.players.B.input],
+  );
 
   useEffect(() => {
     playerMetricsRef.current = playerMetrics;
@@ -263,6 +465,129 @@ export default function TypingArena({
     if (socket?.readyState === WebSocket.OPEN) {
       sendMessage(socket, message);
     }
+  }
+
+  function flushBufferedRemoteTyping() {
+    remoteTypingFlushTimerRef.current = null;
+
+    const bufferedUpdates = bufferedRemoteTypingRef.current;
+    const updateEntries = Object.entries(bufferedUpdates) as Array<
+      [PlayerId, { input: string; typingVersion: number; updatedAt: number }]
+    >;
+
+    if (updateEntries.length === 0) {
+      return;
+    }
+
+    bufferedRemoteTypingRef.current = {};
+
+    setRoom((current) => {
+      let nextPlayers = current.players;
+      let nextUpdatedAt = current.updatedAt;
+      let changed = false;
+
+      for (const [playerId, update] of updateEntries) {
+        const currentPlayer = current.players[playerId];
+
+        if (update.typingVersion < currentPlayer.typingVersion) {
+          continue;
+        }
+
+        if (
+          update.typingVersion === currentPlayer.typingVersion
+          && update.input === currentPlayer.input
+          && update.updatedAt <= nextUpdatedAt
+        ) {
+          continue;
+        }
+
+        if (nextPlayers === current.players) {
+          nextPlayers = {
+            ...current.players,
+          };
+        }
+
+        nextPlayers[playerId] = {
+          ...currentPlayer,
+          input: update.input,
+          typingVersion: update.typingVersion,
+        };
+
+        nextUpdatedAt = Math.max(nextUpdatedAt, update.updatedAt);
+        changed = true;
+      }
+
+      if (!changed) {
+        return current;
+      }
+
+      return {
+        ...current,
+        players: nextPlayers,
+        updatedAt: nextUpdatedAt,
+      };
+    });
+  }
+
+  function queueBufferedRemoteTyping(
+    playerId: PlayerId,
+    input: string,
+    typingVersion: number,
+    updatedAt: number,
+  ) {
+    const currentBuffered = bufferedRemoteTypingRef.current[playerId];
+
+    if (currentBuffered && typingVersion < currentBuffered.typingVersion) {
+      return;
+    }
+
+    bufferedRemoteTypingRef.current[playerId] = {
+      input,
+      typingVersion,
+      updatedAt,
+    };
+
+    if (remoteTypingFlushTimerRef.current !== null) {
+      return;
+    }
+
+    remoteTypingFlushTimerRef.current = window.setTimeout(() => {
+      flushBufferedRemoteTyping();
+    }, 24);
+  }
+
+  function flushQueuedTyping() {
+    typingSendRafRef.current = null;
+
+    const pendingTyping = queuedTypingRef.current;
+
+    if (!pendingTyping) {
+      return;
+    }
+
+    queuedTypingRef.current = null;
+
+    send({
+      type: "typing",
+      playerId: activePlayerId,
+      input: pendingTyping.input,
+      typingVersion: pendingTyping.typingVersion,
+    });
+  }
+
+  function queueTypingSend(input: string, typingVersion: number) {
+    queuedTypingRef.current = {
+      input,
+      typingVersion,
+    };
+
+    if (typingSendRafRef.current !== null) {
+      return;
+    }
+
+    typingSendRafRef.current = window.requestAnimationFrame(() => {
+      flushQueuedTyping();
+    });
   }
 
   function updateRoom(nextRoom: RoomSnapshot) {
@@ -344,11 +669,15 @@ export default function TypingArena({
       startedAt: null,
       finishedAt: null,
       players: {
-        A: { ...current.players.A, input: "" },
-        B: { ...current.players.B, input: "" },
+        A: { ...current.players.A, input: "", typingVersion: 0 },
+        B: { ...current.players.B, input: "", typingVersion: 0 },
       },
       updatedAt: Date.now(),
     }));
+
+    localTypingVersionRef.current = 0;
+    optimisticInputRef.current = "";
+    queuedTypingRef.current = null;
 
     send({ type: "start-countdown" });
   }
@@ -361,21 +690,29 @@ export default function TypingArena({
       startedAt: null,
       finishedAt: null,
       players: {
-        A: { ...current.players.A, input: "", ready: false },
-        B: { ...current.players.B, input: "", ready: false },
+        A: { ...current.players.A, input: "", ready: false, typingVersion: 0 },
+        B: { ...current.players.B, input: "", ready: false, typingVersion: 0 },
       },
       updatedAt: Date.now(),
     }));
+
+    localTypingVersionRef.current = 0;
+    optimisticInputRef.current = "";
+    queuedTypingRef.current = null;
 
     send({ type: "reset-match" });
   }
 
   function handleTypingChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
-    if (room.matchState !== "live" || (clientRole !== "master" && clientRole !== activePlayerId)) {
+    if (room.matchState !== "live" || !isLocalPlayer) {
       return;
     }
 
     const nextValue = event.target.value.slice(0, challengeText.length);
+    const nextTypingVersion = localTypingVersionRef.current + 1;
+
+    localTypingVersionRef.current = nextTypingVersion;
+    optimisticInputRef.current = nextValue;
 
     mutateRoom((current) => ({
       ...current,
@@ -384,65 +721,24 @@ export default function TypingArena({
         [activePlayerId]: {
           ...current.players[activePlayerId],
           input: nextValue,
+          typingVersion: nextTypingVersion,
         },
       },
       updatedAt: Date.now(),
     }));
 
-    send({
-      type: "typing",
-      playerId: activePlayerId,
-      input: nextValue,
-    });
-
-    window.requestAnimationFrame(() => {
-      typingInputRef.current?.focus();
-    });
+    queueTypingSend(nextValue, nextTypingVersion);
   }
 
   function renderChallengeText(playerId: PlayerId, accent?: "emerald" | "amber") {
-    const playerInput = room.players[playerId].input;
+    const renderedText =
+      playerId === "A"
+        ? renderedTextByPlayer.A
+        : accent === "amber"
+          ? renderedTextByPlayer.BAmber
+          : renderedTextByPlayer.B;
 
-    return (
-      <p className="whitespace-pre-wrap wrap-anywhere font-mono text-base leading-8 text-slate-900 sm:text-[17px] sm:leading-9">
-        {challengeText.split("").map((character, index) => {
-          const typedCharacter = playerInput[index];
-          const baseClass = "transition-all duration-150";
-
-          if (index < playerInput.length) {
-            return (
-              <span
-                key={`${playerId}-${character}-${index}`}
-                className={
-                  typedCharacter === character
-                    ? `${baseClass} rounded-[0.2rem] bg-emerald-100 px-0.5 font-semibold text-emerald-950 ring-1 ring-emerald-200/80`
-                    : `${baseClass} rounded-[0.2rem] bg-rose-100 px-0.5 font-semibold text-rose-950 ring-1 ring-rose-200/80`
-                }
-              >
-                {character === " " ? "\u00A0" : character}
-              </span>
-            );
-          }
-
-          if (index === playerInput.length) {
-            return (
-              <span
-                key={`${playerId}-${character}-${index}`}
-                className={`${baseClass} rounded-sm ${accent === "amber" ? "bg-amber-200 text-amber-950 ring-1 ring-amber-300/70" : "bg-emerald-200 text-emerald-950 ring-1 ring-emerald-300/70"}`}
-              >
-                {character === " " ? "\u00A0" : character}
-              </span>
-            );
-          }
-
-          return (
-            <span key={`${playerId}-${character}-${index}`} className={`${baseClass} text-slate-700`}>
-              {character === " " ? "\u00A0" : character}
-            </span>
-          );
-        })}
-      </p>
-    );
+    return <p className="whitespace-pre-wrap wrap-anywhere font-mono text-base leading-8 text-slate-900 sm:text-[17px] sm:leading-9">{renderedText}</p>;
   }
 
   const liveLabel =
@@ -527,7 +823,7 @@ export default function TypingArena({
         )}
       </header>
 
-      <div className="grid min-h-0 flex-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(250px,320px)] lg:grid-cols-[minmax(0,2.15fr)_minmax(290px,0.85fr)] xl:grid-cols-[minmax(0,2.35fr)_minmax(320px,0.75fr)] xl:gap-3">
+      <div className="grid min-h-0 flex-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(258px,328px)] lg:grid-cols-[minmax(0,2.15fr)_minmax(298px,0.85fr)] xl:grid-cols-[minmax(0,2.35fr)_minmax(328px,0.75fr)] xl:gap-3">
         <section className="flex min-h-0 flex-col rounded-3xl border border-slate-200 bg-white/80 p-2 shadow-[0_20px_60px_rgba(1,8,18,0.12)] backdrop-blur-xl sm:p-3 lg:p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -617,13 +913,17 @@ export default function TypingArena({
                 ref={typingInputRef}
                 value={room.players[activePlayerId].input}
                 onChange={handleTypingChange}
-                disabled={room.matchState !== "live" || clientRole !== activePlayerId}
+                disabled={room.matchState !== "live" || !isLocalPlayer}
                 onBlur={() => {
-                  if (room.matchState === "live" && clientRole === activePlayerId) {
+                  if (room.matchState === "live" && isLocalPlayer) {
                     window.setTimeout(() => typingInputRef.current?.focus(), 0);
                   }
                 }}
                 rows={4}
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="none"
+                autoComplete="off"
                 placeholder={room.matchState === "countdown" ? "Espera el inicio..." : "Escribe aquí"}
                 className="min-h-28 w-full flex-1 rounded-3xl border border-white/10 bg-slate-950/55 p-2.5 text-sm leading-6 text-white outline-none transition placeholder:text-slate-500 focus:border-amber-300/50 focus:ring-2 focus:ring-amber-300/20 disabled:cursor-not-allowed disabled:opacity-70 sm:p-3 sm:text-base sm:leading-7"
               />
@@ -668,7 +968,10 @@ export default function TypingArena({
             />
           </div>
 
-          <SponsorCarousel />
+          <SponsorCarousel
+            paused={isSponsorCarouselPaused}
+            onTogglePaused={() => setIsSponsorCarouselPaused((current) => !current)}
+          />
           {isMasterView && leaderboard.length > 0 ? (
             <section className="rounded-3xl border border-slate-200 bg-white p-3 shadow-[0_20px_60px_rgba(1,8,18,0.12)] sm:p-3.5">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -944,18 +1247,81 @@ function MasterPlayerCard({
   );
 }
 
+function renderChallengeRichText(
+  challengeText: string,
+  playerInput: string,
+  playerId: PlayerId,
+  accent?: "emerald" | "amber",
+) {
+  return challengeText.split("").map((character, index) => {
+    const typedCharacter = playerInput[index];
+    const baseClass = "transition-all duration-150";
+
+    if (index < playerInput.length) {
+      return (
+        <span
+          key={`${playerId}-${character}-${index}`}
+          className={
+            typedCharacter === character
+              ? `${baseClass} rounded-[0.2rem] bg-emerald-100 px-0.5 font-semibold text-emerald-950 ring-1 ring-emerald-200/80`
+              : `${baseClass} rounded-[0.2rem] bg-rose-100 px-0.5 font-semibold text-rose-950 ring-1 ring-rose-200/80`
+          }
+        >
+          {character === " " ? "\u00A0" : character}
+        </span>
+      );
+    }
+
+    if (index === playerInput.length) {
+      return (
+        <span
+          key={`${playerId}-${character}-${index}`}
+          className={`${baseClass} rounded-sm ${accent === "amber" ? "bg-amber-200 text-amber-950 ring-1 ring-amber-300/70" : "bg-emerald-200 text-emerald-950 ring-1 ring-emerald-300/70"}`}
+        >
+          {character === " " ? "\u00A0" : character}
+        </span>
+      );
+    }
+
+    return (
+      <span key={`${playerId}-${character}-${index}`} className={`${baseClass} text-slate-700`}>
+        {character === " " ? "\u00A0" : character}
+      </span>
+    );
+  });
+}
+
 function sendMessage(socket: WebSocket, message: Record<string, unknown>) {
   socket.send(JSON.stringify(message));
 }
 
-function SponsorCarousel() {
+function SponsorCarousel({
+  paused,
+  onTogglePaused,
+}: {
+  paused: boolean;
+  onTogglePaused: () => void;
+}) {
   return (
-    <div className="w-full overflow-hidden rounded-3xl border border-slate-200 bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.95)] sm:p-4">
-      <div className="sponsor-marquee flex w-max items-center gap-4 pr-4 sm:gap-5 lg:gap-6">
+    <div className="relative w-full overflow-hidden rounded-3xl border border-slate-200 bg-white p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.95)] sm:p-3 lg:p-4">
+      <button
+        type="button"
+        onClick={onTogglePaused}
+        className="absolute right-2 top-2 z-10 rounded-full border border-slate-200 bg-white/90 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm transition hover:bg-slate-50"
+        aria-label={paused ? "Reanudar carrusel" : "Pausar carrusel"}
+        title={paused ? "Reanudar carrusel" : "Pausar carrusel"}
+      >
+        {paused ? "▶" : "II"}
+      </button>
+
+      <div
+        className="sponsor-marquee flex w-max items-center gap-2 pr-2 sm:gap-3 lg:gap-4"
+        style={{ animationPlayState: paused ? "paused" : "running" }}
+      >
         {[...sponsorAssets, ...sponsorAssets].map((sponsor, index) => (
           <div
             key={`${sponsor.name}-${index}`}
-            className="flex h-28 w-48 shrink-0 items-center justify-center rounded-2xl border border-slate-100 bg-white px-4 py-3 sm:h-32 sm:w-56 lg:h-36 lg:w-64"
+            className="flex h-20 w-36 shrink-0 items-center justify-center rounded-2xl border border-slate-100 bg-white px-3 py-2 sm:h-24 sm:w-40 lg:h-28 lg:w-48"
           >
             <Image
               src={sponsor.image}

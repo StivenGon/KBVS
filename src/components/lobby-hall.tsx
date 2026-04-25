@@ -15,10 +15,9 @@ import {
   type RoomSnapshot,
   updateRoomFeed,
 } from "@/lib/typing-room";
+import { resolveTypingWebSocketUrl } from "@/lib/typing-ws-url";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
-
-const defaultWsUrl = process.env.NEXT_PUBLIC_TYPING_WS_URL ?? "ws://localhost:8787";
 
 export default function LobbyHall() {
   const [roomCode, setRoomCode] = useState(() => createRoomCode());
@@ -26,7 +25,7 @@ export default function LobbyHall() {
   const [room, setRoom] = useState(() => createInitialRoomSnapshot(roomCode));
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [now, setNow] = useState(() => Date.now());
-  const [socketUrl] = useState(defaultWsUrl);
+  const [socketUrl, setSocketUrl] = useState(() => resolveTypingWebSocketUrl());
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
@@ -53,6 +52,8 @@ export default function LobbyHall() {
 
   useEffect(() => {
     mountedRef.current = true;
+    const resolvedSocketUrl = resolveTypingWebSocketUrl();
+    setSocketUrl(resolvedSocketUrl);
 
     const connect = () => {
       if (!mountedRef.current) {
@@ -60,7 +61,7 @@ export default function LobbyHall() {
       }
 
       setConnectionState("connecting");
-      const socket = new WebSocket(socketUrl);
+      const socket = new WebSocket(resolvedSocketUrl);
       socketRef.current = socket;
 
       socket.onopen = () => {
@@ -125,7 +126,7 @@ export default function LobbyHall() {
 
       socketRef.current?.close();
     };
-  }, [roomCode, socketUrl]);
+  }, [roomCode]);
 
   function send(message: Record<string, unknown>) {
     const socket = socketRef.current;

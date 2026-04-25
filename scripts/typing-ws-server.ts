@@ -3,7 +3,6 @@ import { WebSocket, WebSocketServer } from "ws";
 import {
   calculatePlayerStats,
   createCompletionEntry,
-  createDemoAutoAdvance,
   createInitialRoomSnapshot,
   normalizePlayerName,
   updateRoomFeed,
@@ -43,6 +42,7 @@ type ClientMessage =
       type: "typing";
       playerId: PlayerId;
       input: string;
+      typingVersion?: number;
     }
   | {
       type: "leave-room";
@@ -52,6 +52,14 @@ type ServerMessage =
   | {
       type: "room-snapshot";
       room: RoomSnapshot;
+    }
+  | {
+      type: "typing-update";
+      roomCode: string;
+      playerId: PlayerId;
+      input: string;
+      typingVersion: number;
+      updatedAt: number;
     }
   | {
       type: "server-note";
@@ -68,7 +76,10 @@ type RoomClient = {
   role: ClientRole | null;
 };
 
+type StartupError = NodeJS.ErrnoException;
+
 const port = Number(process.env.TYPING_WS_PORT ?? 8787);
+const host = process.env.TYPING_WS_HOST ?? "0.0.0.0";
 const rooms = new Map<string, RoomSnapshot>();
 const clients = new Set<RoomClient>();
 let activeCatalog = getCachedTextCatalog();
@@ -77,17 +88,34 @@ void loadTextCatalog({ forceRefresh: true }).then((catalog) => {
   activeCatalog = catalog;
 });
 
-setInterval(() => {
+const catalogRefreshInterval = setInterval(() => {
   void loadTextCatalog({ forceRefresh: true }).then((catalog) => {
     activeCatalog = catalog;
   });
 }, 60_000);
 
-const wss = new WebSocketServer({ port });
+const wss = new WebSocketServer({ host, port });
+let serverListening = false;
+let duplicateRelayKeepAliveInterval: NodeJS.Timeout | null = null;
 
-console.log(`[typing-ws] listening on ws://localhost:${port}`);
+wss.on("listening", () => {
+  serverListening = true;
+  console.log(`[typing-ws] listening on ws://${host}:${port}`);
+});
+
+wss.on("error", (error) => {
+  void handleServerError(error as StartupError, serverListening);
+});
 
 wss.on("connection", (socket) => {
+  const transport = socket as WebSocket & {
+    _socket?: {
+      setNoDelay?: (noDelay?: boolean) => void;
+    };
+  };
+
+  transport._socket?.setNoDelay?.(true);
+
   const client: RoomClient = {
     socket,
     roomCode: null,
@@ -126,6 +154,8 @@ wss.on("connection", (socket) => {
 
     const room = rooms.get(client.roomCode)!;
 
+    let shouldPublishRoom = true;
+
     switch (message.type) {
       case "update-player": {
         const nextName =
@@ -154,6 +184,8 @@ wss.on("connection", (socket) => {
             message: "El texto solo puede cambiarse antes de comenzar la partida.",
           });
 
+          shouldPublishRoom = false;
+
           break;
         }
 
@@ -174,17 +206,44 @@ wss.on("connection", (socket) => {
       }
       case "typing": {
         if (room.matchState !== "live") {
+          shouldPublishRoom = false;
           break;
         }
 
+        const previousMatchState = room.matchState;
+        const previousFinishedAt = room.finishedAt;
+        const challenge = activeCatalog[room.selectedTextIndex]?.text ?? activeCatalog[0]?.text ?? "";
+        const currentPlayer = room.players[message.playerId];
+        const incomingVersion =
+          typeof message.typingVersion === "number"
+            ? Math.max(0, Math.floor(message.typingVersion))
+            : currentPlayer.typingVersion + 1;
+
+        if (incomingVersion < currentPlayer.typingVersion) {
+          shouldPublishRoom = false;
+          break;
+        }
+
+        const normalizedInput = message.input.slice(0, challenge.length);
+
         room.players[message.playerId] = {
-          ...room.players[message.playerId],
-          input: message.input,
+          ...currentPlayer,
+          input: normalizedInput,
+          typingVersion: incomingVersion,
         };
 
         maybeFinishMatch(room);
 
         room.updatedAt = Date.now();
+
+        if (room.matchState !== previousMatchState || room.finishedAt !== previousFinishedAt) {
+          publishRoom(room);
+          shouldPublishRoom = false;
+          break;
+        }
+
+        publishTypingUpdate(room, message.playerId);
+        shouldPublishRoom = false;
         break;
       }
       case "leave-room": {
@@ -193,7 +252,9 @@ wss.on("connection", (socket) => {
       }
     }
 
-    publishRoom(room);
+    if (shouldPublishRoom) {
+      publishRoom(room);
+    }
   });
 
   socket.on("close", () => {
@@ -202,32 +263,14 @@ wss.on("connection", (socket) => {
   });
 });
 
-setInterval(() => {
+const roomTickInterval = setInterval(() => {
   for (const room of rooms.values()) {
     if (room.matchState === "countdown" && room.countdownEndsAt && room.countdownEndsAt <= Date.now()) {
       startMatch(room);
       publishRoom(room);
-      continue;
     }
-
-    if (room.matchState !== "live" || room.finishedAt) {
-      continue;
-    }
-
-    const challenge = activeCatalog[room.selectedTextIndex]?.text ?? activeCatalog[0]?.text ?? "";
-
-    for (const playerId of ["A", "B"] as PlayerId[]) {
-      if (room.players[playerId].connected) {
-        continue;
-      }
-
-      room.players[playerId].input = createDemoAutoAdvance(room.players[playerId].input, challenge);
-    }
-
-    maybeFinishMatch(room);
-    publishRoom(room);
   }
-}, 180);
+}, 40);
 
 function joinRoom(client: RoomClient, roomCode: string, role: ClientRole, playerName?: string) {
   leaveRoom(client);
@@ -283,7 +326,9 @@ function startMatch(room: RoomSnapshot) {
   room.startedAt = Date.now();
   room.finishedAt = null;
   room.players.A.input = "";
+  room.players.A.typingVersion = 0;
   room.players.B.input = "";
+  room.players.B.typingVersion = 0;
   room.feed = updateRoomFeed(room.feed, `Comenzó la partida en ${room.roomCode}.`);
   room.updatedAt = Date.now();
 }
@@ -294,7 +339,9 @@ function startCountdown(room: RoomSnapshot) {
   room.startedAt = null;
   room.finishedAt = null;
   room.players.A.input = "";
+  room.players.A.typingVersion = 0;
   room.players.B.input = "";
+  room.players.B.typingVersion = 0;
   room.feed = updateRoomFeed(room.feed, "Cuenta regresiva iniciada: la ronda comienza en breve.");
   room.updatedAt = Date.now();
 }
@@ -305,7 +352,9 @@ function resetMatch(room: RoomSnapshot) {
   room.startedAt = null;
   room.finishedAt = null;
   room.players.A.input = "";
+  room.players.A.typingVersion = 0;
   room.players.B.input = "";
+  room.players.B.typingVersion = 0;
   room.players.A.ready = false;
   room.players.B.ready = false;
   room.feed = updateRoomFeed(room.feed, `La sala ${room.roomCode} volvió al lobby.`);
@@ -363,6 +412,126 @@ function publishRoom(room: RoomSnapshot) {
   }
 }
 
+function publishTypingUpdate(room: RoomSnapshot, playerId: PlayerId) {
+  const player = room.players[playerId];
+  const payload = JSON.stringify({
+    type: "typing-update",
+    roomCode: room.roomCode,
+    playerId,
+    input: player.input,
+    typingVersion: player.typingVersion,
+    updatedAt: room.updatedAt,
+  } satisfies ServerMessage);
+
+  for (const client of clients) {
+    if (client.roomCode !== room.roomCode) {
+      continue;
+    }
+
+    if (client.socket.readyState === WebSocket.OPEN) {
+      client.socket.send(payload);
+    }
+  }
+}
+
 function send(socket: import("ws").WebSocket, message: ServerMessage) {
   socket.send(JSON.stringify(message));
+}
+
+async function handleServerError(error: StartupError, alreadyListening: boolean) {
+  if (!alreadyListening && error.code === "EADDRINUSE") {
+    const reachableUrl = await detectReachableRelayUrl(port, host);
+
+    if (reachableUrl) {
+      console.log(
+        `[typing-ws] relay already active at ${reachableUrl}; skipping duplicate start on ws://${host}:${port}.`,
+      );
+      startDuplicateRelayKeepAlive();
+      return;
+    }
+
+    console.error(`[typing-ws] cannot bind ws://${host}:${port}: port already in use by another process.`);
+    process.exit(1);
+    return;
+  }
+
+  console.error("[typing-ws] server error", error);
+
+  if (!alreadyListening) {
+    process.exit(1);
+  }
+}
+
+function startDuplicateRelayKeepAlive() {
+  if (duplicateRelayKeepAliveInterval) {
+    return;
+  }
+
+  clearInterval(catalogRefreshInterval);
+  clearInterval(roomTickInterval);
+
+  duplicateRelayKeepAliveInterval = setInterval(() => {
+    // Keep this process alive so orchestrated dev scripts do not shutdown other services.
+  }, 60_000);
+}
+
+async function detectReachableRelayUrl(portToProbe: number, configuredHost: string) {
+  const probeHosts = Array.from(
+    new Set([
+      configuredHost,
+      configuredHost === "0.0.0.0" ? "127.0.0.1" : "0.0.0.0",
+      "localhost",
+      "127.0.0.1",
+    ]),
+  ).filter((candidateHost) => candidateHost !== "0.0.0.0");
+
+  for (const probeHost of probeHosts) {
+    // Probe the existing listener with a WebSocket handshake so we only reuse an active relay.
+    const isReachable = await canOpenWebSocket(`ws://${probeHost}:${portToProbe}`);
+
+    if (isReachable) {
+      return `ws://${probeHost}:${portToProbe}`;
+    }
+  }
+
+  return null;
+}
+
+function canOpenWebSocket(url: string) {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const socket = new WebSocket(url);
+
+    const finalize = (result: boolean) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeout);
+      socket.removeAllListeners();
+
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.terminate();
+      }
+
+      resolve(result);
+    };
+
+    const timeout = setTimeout(() => {
+      finalize(false);
+    }, 650);
+
+    socket.once("open", () => {
+      finalize(true);
+    });
+
+    socket.once("error", () => {
+      finalize(false);
+    });
+
+    socket.once("unexpected-response", () => {
+      finalize(false);
+    });
+  });
 }
