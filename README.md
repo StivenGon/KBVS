@@ -9,7 +9,29 @@ The current workspace includes a playable front-end prototype with:
 - placeholder telemetry for time, mistakes, accuracy, and WPM
 - room-oriented UI that is ready for WebSocket sync and database persistence
 
-## Getting Started
+## Quick Start (Docker — recommended)
+
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/). No manual MySQL or Node.js setup needed.
+
+```bash
+git clone https://github.com/StivenGon/KBVS.git
+cd KBVS
+docker compose up
+```
+
+That starts everything — MySQL, Next.js, and WebSocket relay — in one command:
+
+| Service | URL |
+|---|---|
+| App | http://localhost:3000 |
+| WebSocket | ws://localhost:8787 |
+| MySQL | localhost:3307 (root / 123456) |
+
+The database schema and seed data are created automatically on first run. Data persists across restarts in a Docker volume.
+
+To stop: `docker compose down`
+
+## Getting Started (without Docker)
 
 Run the development stack:
 
