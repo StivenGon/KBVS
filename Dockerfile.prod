@@ -8,6 +8,8 @@ RUN npm ci
 
 COPY . .
 
+ENV NEXT_PUBLIC_TYPING_WS_URL=/ws
+
 RUN npm run build
 
 EXPOSE 3000
