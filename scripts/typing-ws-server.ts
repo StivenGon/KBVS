@@ -12,6 +12,16 @@ import {
   type RoomSnapshot,
 } from "../src/lib/typing-room";
 import { getCachedTextCatalog, loadTextCatalog } from "../src/lib/text-catalog-service";
+import {
+  addBattlePlayer,
+  allBattlePlayersFinished,
+  createBattleRoom,
+  removeBattlePlayer,
+  type BattlePlayerId,
+  type BattleRoom,
+} from "../src/lib/typing-battle";
+
+const INPUT_OVERTYPE_BUFFER = 24;
 
 type ClientMessage =
   | {
@@ -46,6 +56,25 @@ type ClientMessage =
     }
   | {
       type: "leave-room";
+    }
+  | {
+      type: "join-battle";
+      name: string;
+    }
+  | {
+      type: "battle-typing";
+      input: string;
+      typingVersion?: number;
+    }
+  | {
+      type: "battle-set-text";
+      selectedTextIndex: number;
+    }
+  | {
+      type: "battle-start-countdown";
+    }
+  | {
+      type: "battle-reset";
     };
 
 type ServerMessage =
@@ -68,6 +97,21 @@ type ServerMessage =
   | {
       type: "error";
       message: string;
+    }
+  | {
+      type: "battle-snapshot";
+      room: BattleRoom;
+    }
+  | {
+      type: "battle-typing-update";
+      playerId: BattlePlayerId;
+      input: string;
+      typingVersion: number;
+      updatedAt: number;
+    }
+  | {
+      type: "battle-ranking";
+      players: BattlePlayer[];
     };
 
 type RoomClient = {
@@ -82,6 +126,8 @@ const port = Number(process.env.TYPING_WS_PORT ?? 8787);
 const host = process.env.TYPING_WS_HOST ?? "0.0.0.0";
 const rooms = new Map<string, RoomSnapshot>();
 const clients = new Set<RoomClient>();
+const battleRoom = createBattleRoom();
+const battleClients = new Map<BattlePlayerId, { socket: import("ws").WebSocket }>();
 let activeCatalog = getCachedTextCatalog();
 
 void loadTextCatalog({ forceRefresh: true }).then((catalog) => {
@@ -97,6 +143,18 @@ const catalogRefreshInterval = setInterval(() => {
 const wss = new WebSocketServer({ host, port });
 let serverListening = false;
 let duplicateRelayKeepAliveInterval: NodeJS.Timeout | null = null;
+
+const heartbeatInterval = setInterval(() => {
+  for (const client of clients) {
+    if (client.socket.readyState === WebSocket.OPEN) {
+      client.socket.ping();
+    }
+  }
+}, 30_000);
+
+if (heartbeatInterval.unref) {
+  heartbeatInterval.unref();
+}
 
 wss.on("listening", () => {
   serverListening = true;
@@ -140,6 +198,17 @@ wss.on("connection", (socket) => {
 
     if (message.type === "join-room") {
       joinRoom(client, message.roomCode, message.role, message.name);
+      return;
+    }
+
+    if (
+      message.type === "join-battle" ||
+      message.type === "battle-typing" ||
+      message.type === "battle-set-text" ||
+      message.type === "battle-start-countdown" ||
+      message.type === "battle-reset"
+    ) {
+      handleBattleMessage(socket, message);
       return;
     }
 
@@ -224,7 +293,7 @@ wss.on("connection", (socket) => {
           break;
         }
 
-        const normalizedInput = message.input.slice(0, challenge.length);
+        const normalizedInput = message.input.slice(0, challenge.length + INPUT_OVERTYPE_BUFFER);
 
         room.players[message.playerId] = {
           ...currentPlayer,
@@ -260,6 +329,19 @@ wss.on("connection", (socket) => {
   socket.on("close", () => {
     leaveRoom(client);
     clients.delete(client);
+
+    const battleClientEntry = Array.from(battleClients.entries()).find(
+      ([, c]) => c.socket === socket,
+    );
+    if (battleClientEntry) {
+      const playerId = battleClientEntry[0];
+      removeBattlePlayer(battleRoom, playerId);
+      battleClients.delete(playerId);
+      if (battleRoom.matchState === "live" && allBattlePlayersFinished(battleRoom)) {
+        finishBattle();
+      }
+      publishBattleRoom();
+    }
   });
 });
 
@@ -269,6 +351,10 @@ const roomTickInterval = setInterval(() => {
       startMatch(room);
       publishRoom(room);
     }
+  }
+
+  if (battleRoom.matchState === "countdown" && battleRoom.countdownEndsAt && battleRoom.countdownEndsAt <= Date.now()) {
+    startBattle();
   }
 }, 40);
 
@@ -436,6 +522,186 @@ function publishTypingUpdate(room: RoomSnapshot, playerId: PlayerId) {
 
 function send(socket: import("ws").WebSocket, message: ServerMessage) {
   socket.send(JSON.stringify(message));
+}
+
+function handleBattleMessage(
+  socket: import("ws").WebSocket,
+  message: Extract<
+    ClientMessage,
+    { type: "join-battle" | "battle-typing" | "battle-set-text" | "battle-start-countdown" | "battle-reset" }
+  >,
+) {
+  switch (message.type) {
+    case "join-battle": {
+      const existingIds = Array.from(battleClients.keys());
+      for (const existingId of existingIds) {
+        if (battleClients.get(existingId)?.socket === socket) {
+          return;
+        }
+      }
+
+      const player = addBattlePlayer(battleRoom, message.name);
+      battleClients.set(player.id, { socket });
+      publishBattleRoom();
+      break;
+    }
+    case "battle-typing": {
+      if (battleRoom.matchState !== "live") break;
+
+      const battleClientEntry = Array.from(battleClients.entries()).find(
+        ([, client]) => client.socket === socket,
+      );
+      if (!battleClientEntry) break;
+
+      const playerId = battleClientEntry[0];
+      const player = battleRoom.players.find((p) => p.id === playerId);
+      if (!player || player.finished) break;
+
+      const incomingVersion =
+        typeof message.typingVersion === "number"
+          ? Math.max(0, Math.floor(message.typingVersion))
+          : player.typingVersion + 1;
+
+      if (incomingVersion < player.typingVersion) break;
+
+      const challenge = activeCatalog[battleRoom.selectedTextIndex]?.text ?? activeCatalog[0]?.text ?? "";
+      player.input = message.input.slice(0, challenge.length + INPUT_OVERTYPE_BUFFER);
+      player.typingVersion = incomingVersion;
+      battleRoom.updatedAt = Date.now();
+
+      const stats = calculatePlayerStats(
+        player.input,
+        challenge,
+        battleRoom.startedAt ?? 0,
+        Date.now(),
+        player.finishedAt,
+      );
+
+      if (stats.progress >= 100) {
+        player.finished = true;
+        player.finishedAt = Date.now();
+        battleRoom.feed = [
+          `${player.name} terminó en ${stats.elapsedText} — ${stats.wpm} PPM, ${stats.accuracy}% precisión`,
+          ...battleRoom.feed,
+        ].slice(0, 10);
+        publishBattleRoom();
+
+        if (allBattlePlayersFinished(battleRoom)) {
+          finishBattle();
+        }
+        break;
+      }
+
+      publishBattleTypingUpdate(playerId);
+      break;
+    }
+    case "battle-set-text": {
+      if (battleRoom.matchState !== "lobby") {
+        send(socket, { type: "error", message: "El texto solo puede cambiarse antes de comenzar." });
+        return;
+      }
+      const maxIndex = Math.max(0, activeCatalog.length - 1);
+      battleRoom.selectedTextIndex = Math.max(0, Math.min(maxIndex, message.selectedTextIndex));
+      const challenge = activeCatalog[battleRoom.selectedTextIndex] ?? activeCatalog[0];
+      battleRoom.feed = [`Se cargó "${challenge.title}" (${challenge.difficulty.label}).`, ...battleRoom.feed].slice(0, 10);
+      battleRoom.updatedAt = Date.now();
+      publishBattleRoom();
+      break;
+    }
+    case "battle-start-countdown": {
+      if (battleRoom.matchState !== "lobby") {
+        send(socket, { type: "error", message: "La partida ya está en curso." });
+        return;
+      }
+      battleRoom.matchState = "countdown";
+      battleRoom.countdownEndsAt = Date.now() + 3000;
+      battleRoom.startedAt = null;
+      battleRoom.finishedAt = null;
+      for (const p of battleRoom.players) {
+        p.input = "";
+        p.typingVersion = 0;
+        p.finished = false;
+        p.finishedAt = null;
+      }
+      battleRoom.feed = ["Cuenta regresiva iniciada: la batalla comienza en breve.", ...battleRoom.feed].slice(0, 10);
+      battleRoom.updatedAt = Date.now();
+      publishBattleRoom();
+      break;
+    }
+    case "battle-reset": {
+      battleRoom.matchState = "lobby";
+      battleRoom.countdownEndsAt = null;
+      battleRoom.startedAt = null;
+      battleRoom.finishedAt = null;
+      for (const p of battleRoom.players) {
+        p.input = "";
+        p.typingVersion = 0;
+        p.finished = false;
+        p.finishedAt = null;
+        p.ready = false;
+      }
+      battleRoom.feed = ["La sala de batalla volvió al lobby.", ...battleRoom.feed].slice(0, 10);
+      battleRoom.updatedAt = Date.now();
+      publishBattleRoom();
+      break;
+    }
+  }
+}
+
+function startBattle() {
+  battleRoom.matchState = "live";
+  battleRoom.countdownEndsAt = null;
+  battleRoom.startedAt = Date.now();
+  battleRoom.finishedAt = null;
+  for (const p of battleRoom.players) {
+    p.input = "";
+    p.typingVersion = 0;
+    p.finished = false;
+    p.finishedAt = null;
+  }
+  battleRoom.feed = ["¡Comenzó la batalla!", ...battleRoom.feed].slice(0, 10);
+  battleRoom.updatedAt = Date.now();
+  publishBattleRoom();
+}
+
+function finishBattle() {
+  battleRoom.matchState = "finished";
+  battleRoom.finishedAt = Date.now();
+  battleRoom.feed = ["La batalla terminó. ¡Revisen la clasificación!", ...battleRoom.feed].slice(0, 10);
+  battleRoom.updatedAt = Date.now();
+  publishBattleRoom();
+}
+
+function publishBattleRoom() {
+  const payload = JSON.stringify({
+    type: "battle-snapshot",
+    room: battleRoom,
+  } satisfies ServerMessage);
+
+  for (const [, client] of battleClients) {
+    if (client.socket.readyState === WebSocket.OPEN) {
+      client.socket.send(payload);
+    }
+  }
+}
+
+function publishBattleTypingUpdate(playerId: BattlePlayerId) {
+  const player = battleRoom.players.find((p) => p.id === playerId);
+  if (!player) return;
+
+  const payload = JSON.stringify({
+    type: "battle-typing-update",
+    playerId,
+    input: player.input,
+    typingVersion: player.typingVersion,
+    updatedAt: battleRoom.updatedAt,
+  } satisfies ServerMessage);
+
+  for (const [, client] of battleClients) {
+    if (client.socket.readyState === WebSocket.OPEN) {
+      client.socket.send(payload);
+    }
+  }
 }
 
 async function handleServerError(error: StartupError, alreadyListening: boolean) {

@@ -54,6 +54,12 @@ export default function Home() {
             >
               Ver clasificación
             </Link>
+            <Link
+              href="/battle"
+              className="rounded-[22px] border border-rose-400/30 bg-rose-600 px-5 py-4 text-sm font-semibold text-white transition hover:brightness-105"
+            >
+              Batalla Real
+            </Link>
           </div>
 
         

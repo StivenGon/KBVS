@@ -7,7 +7,6 @@ import Link from "next/link";
 import {
   createInitialRoomSnapshot,
   createRoomCode,
-  challengeTexts,
   getChallengeDifficulty,
   normalizePlayerName,
   type ClientRole,
@@ -15,6 +14,7 @@ import {
   type RoomSnapshot,
   updateRoomFeed,
 } from "@/lib/typing-room";
+import { buildFallbackCatalog, type CatalogText } from "@/lib/text-catalog";
 import { resolveTypingWebSocketUrl } from "@/lib/typing-ws-url";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
@@ -23,6 +23,7 @@ export default function LobbyHall() {
   const [roomCode, setRoomCode] = useState(() => createRoomCode());
   const [nickname, setNickname] = useState("Anfitrión");
   const [room, setRoom] = useState(() => createInitialRoomSnapshot(roomCode));
+  const [textCatalog, setTextCatalog] = useState<CatalogText[]>(() => buildFallbackCatalog());
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [now, setNow] = useState(() => Date.now());
   const [socketUrl, setSocketUrl] = useState(() => resolveTypingWebSocketUrl());
@@ -35,8 +36,38 @@ export default function LobbyHall() {
   const playerAHref = `/player/A?room=${encodedRoom}`;
   const playerBHref = `/player/B?room=${encodedRoom}`;
   const masterReady = room.players.A.ready && room.players.B.ready;
-  const activeChallenge = challengeTexts[room.selectedTextIndex];
+  const activeChallenge = textCatalog[room.selectedTextIndex] ?? textCatalog[0];
   const activeDifficulty = getChallengeDifficulty(activeChallenge);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCatalog() {
+      try {
+        const response = await fetch("/api/text-catalog", { cache: "no-store" });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as { texts?: CatalogText[] };
+
+        if (!cancelled && payload.texts?.length) {
+          setTextCatalog(payload.texts);
+        }
+      } catch {
+        if (!cancelled) {
+          setTextCatalog(buildFallbackCatalog());
+        }
+      }
+    }
+
+    void loadCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setRoom(createInitialRoomSnapshot(roomCode));
@@ -63,15 +94,6 @@ export default function LobbyHall() {
       setConnectionState("connecting");
       const socket = new WebSocket(resolvedSocketUrl);
       socketRef.current = socket;
-
-      socket.onopen = () => {
-        setConnectionState("connected");
-        sendMessage(socket, {
-          type: "join-room",
-          roomCode,
-          role: "master" satisfies ClientRole,
-        });
-      };
 
       socket.onmessage = (event) => {
         try {
@@ -100,6 +122,19 @@ export default function LobbyHall() {
         setConnectionState("error");
       };
 
+      let reconnectDelay = 1000;
+      const maxReconnectDelay = 30000;
+
+      socket.onopen = () => {
+        reconnectDelay = 1000;
+        setConnectionState("connected");
+        sendMessage(socket, {
+          type: "join-room",
+          roomCode,
+          role: "master" satisfies ClientRole,
+        });
+      };
+
       socket.onclose = () => {
         if (!mountedRef.current) {
           return;
@@ -111,7 +146,8 @@ export default function LobbyHall() {
           window.clearTimeout(reconnectTimerRef.current);
         }
 
-        reconnectTimerRef.current = window.setTimeout(connect, 1500);
+        reconnectTimerRef.current = window.setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 1.5, maxReconnectDelay);
       };
     };
 
@@ -162,15 +198,17 @@ export default function LobbyHall() {
       return;
     }
 
+    const nextTextIndex = Math.max(0, Math.min(selectedTextIndex, textCatalog.length - 1));
+
     setRoom((current) => ({
       ...current,
-      selectedTextIndex,
+      selectedTextIndex: nextTextIndex,
       updatedAt: Date.now(),
     }));
 
     send({
       type: "set-text",
-      selectedTextIndex,
+      selectedTextIndex: nextTextIndex,
     });
   }
 
@@ -320,7 +358,7 @@ export default function LobbyHall() {
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              {challengeTexts.map((challenge, index) => {
+              {textCatalog.map((challenge, index) => {
                 const difficulty = getChallengeDifficulty(challenge);
                 const selected = index === room.selectedTextIndex;
 

@@ -197,14 +197,18 @@ export function calculatePlayerStats(
   now: number,
   finishedAt: number | null,
 ): PlayerStats {
-  const typedCharacters = input.length;
-  const targetCharacters = target.length;
-  const correctCharacters = Array.from(input).reduce((total, character, index) => {
-    return total + (character === target[index] ? 1 : 0);
-  }, 0);
+  const typedCharacters = Array.from(input).length;
+  const targetCharacters = Array.from(target).length;
+  const correctCharacters = getCorrectPrefixLength(input, target);
+  const exactMatch = input === target;
   const mistakes = Math.max(0, typedCharacters - correctCharacters);
   const accuracy = typedCharacters === 0 ? 100 : Math.max(0, Math.round((correctCharacters / typedCharacters) * 100));
-  const progress = targetCharacters === 0 ? 0 : Math.min(100, Math.round((typedCharacters / targetCharacters) * 100));
+  const progress =
+    targetCharacters === 0
+      ? 0
+      : exactMatch
+        ? 100
+        : Math.min(99, Math.round((correctCharacters / targetCharacters) * 100));
   const elapsed = startedAt ? (finishedAt ?? now) - startedAt : 0;
   const wpm =
     startedAt && elapsed > 0
@@ -218,11 +222,28 @@ export function calculatePlayerStats(
     mistakes,
     accuracy,
     progress,
-    textProgressLabel: `${Math.min(typedCharacters, targetCharacters)}/${targetCharacters} caracteres`,
+    textProgressLabel: `${Math.min(correctCharacters, targetCharacters)}/${targetCharacters} caracteres`,
     elapsed,
     wpm,
     elapsedText: startedAt ? formatClock(elapsed) : "00:00.00",
   };
+}
+
+export function getCorrectPrefixLength(input: string, target: string) {
+  const inputCharacters = Array.from(input);
+  const targetCharacters = Array.from(target);
+  const maxLength = Math.min(inputCharacters.length, targetCharacters.length);
+  let matchedCharacters = 0;
+
+  for (let index = 0; index < maxLength; index += 1) {
+    if (inputCharacters[index] !== targetCharacters[index]) {
+      break;
+    }
+
+    matchedCharacters += 1;
+  }
+
+  return matchedCharacters;
 }
 
 export function createDemoAutoAdvance(input: string, target: string) {

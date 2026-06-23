@@ -26,6 +26,7 @@ import {
   createInitialRoomSnapshot,
   buildLeaderboard,
   formatClock,
+  getCorrectPrefixLength,
   winnerFromSnapshot,
   type ClientRole,
   type PlayerId,
@@ -38,6 +39,8 @@ import { buildFallbackCatalog, type CatalogText } from "@/lib/text-catalog";
 import { resolveTypingWebSocketUrl } from "@/lib/typing-ws-url";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
+
+const INPUT_OVERTYPE_BUFFER = 24;
 
 const sponsorAssets = [
   { name: "Dicosta", image: auspicioDicosta },
@@ -144,16 +147,6 @@ export default function TypingArena({
       setConnectionState("connecting");
       const socket = new WebSocket(resolvedSocketUrl);
       socketRef.current = socket;
-
-      socket.onopen = () => {
-        setConnectionState("connected");
-        sendMessage(socket, {
-          type: "join-room",
-          roomCode,
-          role: clientRole,
-          ...(playerName ? { name: playerName } : {}),
-        });
-      };
 
       socket.onmessage = (event) => {
         try {
@@ -277,6 +270,20 @@ export default function TypingArena({
         setConnectionState("error");
       };
 
+      let reconnectDelay = 1000;
+      const maxReconnectDelay = 30000;
+
+      socket.onopen = () => {
+        reconnectDelay = 1000;
+        setConnectionState("connected");
+        sendMessage(socket, {
+          type: "join-room",
+          roomCode,
+          role: clientRole,
+          ...(playerName ? { name: playerName } : {}),
+        });
+      };
+
       socket.onclose = () => {
         if (!mountedRef.current) {
           return;
@@ -288,7 +295,8 @@ export default function TypingArena({
           window.clearTimeout(reconnectTimerRef.current);
         }
 
-        reconnectTimerRef.current = window.setTimeout(connect, 1500);
+        reconnectTimerRef.current = window.setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 1.5, maxReconnectDelay);
       };
     };
 
@@ -708,7 +716,9 @@ export default function TypingArena({
       return;
     }
 
-    const nextValue = event.target.value.slice(0, challengeText.length);
+    const normalizedValue = event.target.value.replace(/\s+/gu, " ");
+    const limitedValue = normalizedValue.slice(0, challengeText.length + INPUT_OVERTYPE_BUFFER);
+    const nextValue = blockPrematureSpace(limitedValue, challengeText);
     const nextTypingVersion = localTypingVersionRef.current + 1;
 
     localTypingVersionRef.current = nextTypingVersion;
@@ -1253,42 +1263,100 @@ function renderChallengeRichText(
   playerId: PlayerId,
   accent?: "emerald" | "amber",
 ) {
-  return challengeText.split("").map((character, index) => {
-    const typedCharacter = playerInput[index];
-    const baseClass = "transition-all duration-150";
+  const targetWords = challengeText.split(" ");
+  const inputWords = playerInput.length === 0 ? [] : playerInput.split(" ");
+  const hasTrailingSpace = playerInput.endsWith(" ");
+  const activeWordIndex = hasTrailingSpace ? Math.max(0, inputWords.length - 1) : Math.max(0, inputWords.length - 1);
 
-    if (index < playerInput.length) {
-      return (
-        <span
-          key={`${playerId}-${character}-${index}`}
-          className={
-            typedCharacter === character
-              ? `${baseClass} rounded-[0.2rem] bg-emerald-100 px-0.5 font-semibold text-emerald-950 ring-1 ring-emerald-200/80`
-              : `${baseClass} rounded-[0.2rem] bg-rose-100 px-0.5 font-semibold text-rose-950 ring-1 ring-rose-200/80`
-          }
-        >
-          {character === " " ? "\u00A0" : character}
-        </span>
-      );
-    }
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-1 gap-y-1.5">
+      {targetWords.map((word, wordIndex) => {
+        const typedWord = inputWords[wordIndex] ?? "";
+        const isCurrentWord = wordIndex === activeWordIndex;
+        const isCompletedWord = wordIndex < activeWordIndex;
+        const typedCharacters = Array.from(typedWord);
+        const targetCharacters = Array.from(word);
+        const prefixLength = getCorrectPrefixLength(typedWord, word);
+        const wordIsExact = typedWord === word;
+        const wordClassName = isCompletedWord
+          ? "text-slate-800"
+          : isCurrentWord
+            ? "rounded-md bg-slate-100 px-1 text-slate-900 ring-1 ring-inset ring-slate-200"
+            : "text-slate-800";
 
-    if (index === playerInput.length) {
-      return (
-        <span
-          key={`${playerId}-${character}-${index}`}
-          className={`${baseClass} rounded-sm ${accent === "amber" ? "bg-amber-200 text-amber-950 ring-1 ring-amber-300/70" : "bg-emerald-200 text-emerald-950 ring-1 ring-emerald-300/70"}`}
-        >
-          {character === " " ? "\u00A0" : character}
-        </span>
-      );
-    }
+        return (
+          <span key={`${playerId}-word-${wordIndex}`} className="inline-flex items-baseline whitespace-pre">
+            <span className={wordClassName}>
+              {targetCharacters.map((character, characterIndex) => {
+                const typedCharacter = typedCharacters[characterIndex];
 
-    return (
-      <span key={`${playerId}-${character}-${index}`} className={`${baseClass} text-slate-700`}>
-        {character === " " ? "\u00A0" : character}
-      </span>
-    );
-  });
+                if (characterIndex < typedCharacters.length) {
+                  return (
+                    <span
+                      key={`${playerId}-word-${wordIndex}-char-${characterIndex}`}
+                      className={
+                        typedCharacter === character
+                          ? "text-slate-900"
+                          : "rounded-[0.18rem] bg-rose-100 px-0.5 text-rose-900"
+                      }
+                    >
+                      {character === " " ? "\u00A0" : character}
+                    </span>
+                  );
+                }
+
+                return (
+                  <span key={`${playerId}-word-${wordIndex}-char-${characterIndex}`} className="text-slate-400">
+                    {character === " " ? "\u00A0" : character}
+                  </span>
+                );
+              })}
+
+              {typedCharacters.slice(targetCharacters.length).map((extraCharacter, extraIndex) => (
+                <span
+                  key={`${playerId}-word-${wordIndex}-extra-${extraIndex}`}
+                  className="rounded-[0.18rem] bg-rose-100 px-0.5 text-rose-900"
+                >
+                  {extraCharacter === " " ? "\u00A0" : extraCharacter}
+                </span>
+              ))}
+
+              {isCurrentWord ? (
+                <span
+                  className={`ml-0.5 inline-block h-[1.05em] w-[2px] align-[-0.15em] rounded-full ${
+                    accent === "amber" ? "bg-amber-500" : "bg-emerald-600"
+                  } animate-pulse`}
+                  aria-hidden="true"
+                />
+              ) : null}
+            </span>
+
+            {wordIndex < targetWords.length - 1 ? <span className="select-none text-slate-400">&nbsp;</span> : null}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function blockPrematureSpace(value: string, targetText: string) {
+  const normalizedValue = value.replace(/\s+/gu, " ");
+
+  if (!normalizedValue.endsWith(" ")) {
+    return normalizedValue;
+  }
+
+  const typedWords = normalizedValue.trimEnd().split(" ");
+  const targetWords = targetText.split(" ");
+  const completedWordIndex = typedWords.length - 1;
+
+  if (completedWordIndex < 0) {
+    return normalizedValue.trimEnd();
+  }
+
+  return typedWords[completedWordIndex] === targetWords[completedWordIndex]
+    ? normalizedValue
+    : normalizedValue.trimEnd();
 }
 
 function sendMessage(socket: WebSocket, message: Record<string, unknown>) {
