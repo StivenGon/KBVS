@@ -37,6 +37,7 @@ export default function BattleArena({
   const localTypingVersionRef = useRef(0);
   const typingSendRafRef = useRef<number | null>(null);
   const queuedTypingRef = useRef<{ input: string; typingVersion: number } | null>(null);
+  const challengeTextRef = useRef<HTMLParagraphElement | null>(null);
 
   const displayName = isMaster ? "Maestro" : (playerName?.trim() || "Jugador");
 
@@ -161,6 +162,14 @@ export default function BattleArena({
     const timer = window.setInterval(() => setClockTick(Date.now()), 250);
     return () => window.clearInterval(timer);
   }, [room?.matchState, room?.countdownEndsAt]);
+
+  useEffect(() => {
+    if (!isLive || isMaster) return;
+    const cursorEl = challengeTextRef.current?.querySelector<HTMLSpanElement>('[data-battle-cursor="true"]');
+    if (cursorEl) {
+      cursorEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [localInput, myStats?.typedCharacters, isLive, isMaster]);
 
   function send(socket: WebSocket, message: Record<string, unknown>) {
     if (socket.readyState === WebSocket.OPEN) {
@@ -374,17 +383,26 @@ export default function BattleArena({
                 {challenge.difficulty.label}
               </span>
             </div>
-            <p className="text-lg leading-relaxed text-white/90 select-none" style={{ wordBreak: "break-word" }}>
+            <p
+              ref={challengeTextRef}
+              className="max-h-[28vh] overflow-y-auto text-lg leading-relaxed text-white/90 select-none scroll-smooth"
+              style={{ wordBreak: "break-word", scrollBehavior: "smooth" }}
+            >
               {challenge.text.split("").map((char, i) => {
                 const isCorrect = myStats && i < myStats.correctCharacters;
                 const isError = myStats && i < (myStats.typedCharacters) && i >= myStats.correctCharacters;
+                const isCursor = myStats && i === (myStats.typedCharacters ?? 0);
                 let color = "text-white/30";
                 if (isCorrect) color = "text-emerald-400";
                 else if (isError) color = "text-rose-400 bg-rose-500/30";
-                else if (i === (myStats?.typedCharacters ?? 0)) color = "text-(--accent)";
+                else if (isCursor) color = "text-(--accent)";
 
                 return (
-                  <span key={i} className={color}>
+                  <span
+                    key={i}
+                    className={color}
+                    data-battle-cursor={isCursor ? "true" : undefined}
+                  >
                     {char}
                   </span>
                 );

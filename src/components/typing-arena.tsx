@@ -89,6 +89,7 @@ export default function TypingArena({
   const queuedTypingRef = useRef<{ input: string; typingVersion: number } | null>(null);
   const typingSendRafRef = useRef<number | null>(null);
   const lastSavedMatchRef = useRef<string | null>(null);
+  const challengeTextContainerRef = useRef<HTMLDivElement | null>(null);
   const bufferedRemoteTypingRef = useRef<
     Partial<Record<PlayerId, { input: string; typingVersion: number; updatedAt: number }>>
   >({});
@@ -341,6 +342,16 @@ export default function TypingArena({
 
     return () => window.clearInterval(timer);
   }, [room.matchState, room.countdownEndsAt]);
+
+  useEffect(() => {
+    if (room.matchState !== "live" || isMasterView) return;
+    const container = challengeTextContainerRef.current;
+    if (!container) return;
+    const currentWord = container.querySelector<HTMLElement>('[data-current-word="true"]');
+    if (currentWord) {
+      currentWord.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [room.matchState, activeStats?.progress, isMasterView]);
 
   useEffect(() => {
     if (room.matchState !== "finished" || !isLocalPlayer) {
@@ -910,7 +921,7 @@ export default function TypingArena({
                     Jugador {activePlayerId} · {activeStats.progress}% · {activeStats.wpm} WPM
                   </span>
                 </div>
-                <div className="min-h-0 flex-1 overflow-hidden wrap-anywhere">
+                <div ref={challengeTextContainerRef} className="min-h-0 flex-1 overflow-auto wrap-anywhere max-h-[40vh]">
                   {renderChallengeText(activePlayerId)}
                 </div>
               </div>
@@ -1286,7 +1297,7 @@ function renderChallengeRichText(
 
         return (
           <span key={`${playerId}-word-${wordIndex}`} className="inline-flex items-baseline whitespace-pre">
-            <span className={wordClassName}>
+            <span className={wordClassName} data-current-word={isCurrentWord ? "true" : undefined}>
               {targetCharacters.map((character, characterIndex) => {
                 const typedCharacter = typedCharacters[characterIndex];
 
