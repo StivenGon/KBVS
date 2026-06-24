@@ -37,7 +37,7 @@ export default function LobbyHall() {
   const playerBHref = `/player/B?room=${encodedRoom}`;
   const masterReady = room.players.A.ready && room.players.B.ready;
   const activeChallenge = textCatalog[room.selectedTextIndex] ?? textCatalog[0];
-  const activeDifficulty = getChallengeDifficulty(activeChallenge);
+  const activeDifficulty = activeChallenge.difficulty;
 
   useEffect(() => {
     let cancelled = false;
