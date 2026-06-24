@@ -197,10 +197,12 @@ export function calculatePlayerStats(
   now: number,
   finishedAt: number | null,
 ): PlayerStats {
-  const typedCharacters = Array.from(input).length;
-  const targetCharacters = Array.from(target).length;
-  const correctCharacters = getCorrectPrefixLength(input, target);
-  const exactMatch = input === target;
+  const normalizedInput = input.normalize("NFC");
+  const normalizedTarget = target.normalize("NFC");
+  const typedCharacters = Array.from(normalizedInput).length;
+  const targetCharacters = Array.from(normalizedTarget).length;
+  const correctCharacters = getCorrectPrefixLength(normalizedInput, normalizedTarget);
+  const exactMatch = normalizedInput === normalizedTarget;
   const mistakes = Math.max(0, typedCharacters - correctCharacters);
   const accuracy = typedCharacters === 0 ? 100 : Math.max(0, Math.round((correctCharacters / typedCharacters) * 100));
   const progress =
