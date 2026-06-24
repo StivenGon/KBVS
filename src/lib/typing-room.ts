@@ -202,13 +202,13 @@ export function calculatePlayerStats(
   const typedCharacters = Array.from(normalizedInput).length;
   const targetCharacters = Array.from(normalizedTarget).length;
   const correctCharacters = getCorrectPrefixLength(normalizedInput, normalizedTarget);
-  const exactMatch = normalizedInput === normalizedTarget;
   const mistakes = Math.max(0, typedCharacters - correctCharacters);
   const accuracy = typedCharacters === 0 ? 100 : Math.max(0, Math.round((correctCharacters / typedCharacters) * 100));
+  const finished = correctCharacters >= targetCharacters;
   const progress =
     targetCharacters === 0
       ? 0
-      : exactMatch
+      : finished
         ? 100
         : Math.min(99, Math.round((correctCharacters / targetCharacters) * 100));
   const elapsed = startedAt ? (finishedAt ?? now) - startedAt : 0;
