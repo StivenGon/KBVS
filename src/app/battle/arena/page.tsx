@@ -9,6 +9,7 @@ function BattleArenaContent() {
   const searchParams = useSearchParams();
   const name = searchParams.get("name") || "";
   const mode = searchParams.get("mode") || "player";
+  const roomCode = searchParams.get("room") || "battle";
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -21,7 +22,7 @@ function BattleArenaContent() {
 
   if (!ready) return null;
 
-  return <BattleArena playerName={name} isMaster={mode === "master"} />;
+  return <BattleArena playerName={name} isMaster={mode === "master"} roomCode={roomCode} />;
 }
 
 export default function BattleArenaPage() {

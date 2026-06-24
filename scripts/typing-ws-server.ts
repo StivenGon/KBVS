@@ -60,21 +60,26 @@ type ClientMessage =
   | {
       type: "join-battle";
       name: string;
+      roomCode: string;
     }
   | {
       type: "battle-typing";
+      roomCode: string;
       input: string;
       typingVersion?: number;
     }
   | {
       type: "battle-set-text";
+      roomCode: string;
       selectedTextIndex: number;
     }
   | {
       type: "battle-start-countdown";
+      roomCode: string;
     }
   | {
       type: "battle-reset";
+      roomCode: string;
     };
 
 type ServerMessage =
@@ -104,6 +109,7 @@ type ServerMessage =
     }
   | {
       type: "battle-typing-update";
+      roomCode: string;
       playerId: BattlePlayerId;
       input: string;
       typingVersion: number;
@@ -126,8 +132,8 @@ const port = Number(process.env.TYPING_WS_PORT ?? 8787);
 const host = process.env.TYPING_WS_HOST ?? "0.0.0.0";
 const rooms = new Map<string, RoomSnapshot>();
 const clients = new Set<RoomClient>();
-const battleRoom = createBattleRoom();
-const battleClients = new Map<BattlePlayerId, { socket: import("ws").WebSocket }>();
+const battleRooms = new Map<string, BattleRoom>();
+const battleClientsByRoom = new Map<string, Map<BattlePlayerId, { socket: import("ws").WebSocket }>>();
 let activeCatalog = getCachedTextCatalog();
 
 void loadTextCatalog({ forceRefresh: true }).then((catalog) => {
@@ -330,17 +336,21 @@ wss.on("connection", (socket) => {
     leaveRoom(client);
     clients.delete(client);
 
-    const battleClientEntry = Array.from(battleClients.entries()).find(
-      ([, c]) => c.socket === socket,
-    );
-    if (battleClientEntry) {
-      const playerId = battleClientEntry[0];
-      removeBattlePlayer(battleRoom, playerId);
-      battleClients.delete(playerId);
-      if (battleRoom.matchState === "live" && allBattlePlayersFinished(battleRoom)) {
-        finishBattle();
+    for (const [roomCode, roomClients] of battleClientsByRoom) {
+      const entry = Array.from(roomClients.entries()).find(([, c]) => c.socket === socket);
+      if (entry) {
+        const playerId = entry[0];
+        const room = battleRooms.get(roomCode);
+        if (room) {
+          removeBattlePlayer(room, playerId);
+          if (room.matchState === "live" && allBattlePlayersFinished(room)) {
+            finishBattle(roomCode, room, roomClients);
+          }
+          publishBattleRoom(roomCode, room, roomClients);
+        }
+        roomClients.delete(playerId);
+        break;
       }
-      publishBattleRoom();
     }
   });
 });
@@ -353,8 +363,11 @@ const roomTickInterval = setInterval(() => {
     }
   }
 
-  if (battleRoom.matchState === "countdown" && battleRoom.countdownEndsAt && battleRoom.countdownEndsAt <= Date.now()) {
-    startBattle();
+  for (const [roomCode, room] of battleRooms) {
+    if (room.matchState === "countdown" && room.countdownEndsAt && room.countdownEndsAt <= Date.now()) {
+      const clients = getBattleClients(roomCode);
+      startBattle(roomCode, room, clients);
+    }
   }
 }, 40);
 
@@ -524,6 +537,26 @@ function send(socket: import("ws").WebSocket, message: ServerMessage) {
   socket.send(JSON.stringify(message));
 }
 
+function getBattleRoom(roomCode: string): BattleRoom {
+  let room = battleRooms.get(roomCode);
+  if (!room) {
+    room = createBattleRoom();
+    room.roomCode = roomCode;
+    battleRooms.set(roomCode, room);
+    battleClientsByRoom.set(roomCode, new Map());
+  }
+  return room;
+}
+
+function getBattleClients(roomCode: string): Map<BattlePlayerId, { socket: import("ws").WebSocket }> {
+  let clients = battleClientsByRoom.get(roomCode);
+  if (!clients) {
+    clients = new Map();
+    battleClientsByRoom.set(roomCode, clients);
+  }
+  return clients;
+}
+
 function handleBattleMessage(
   socket: import("ws").WebSocket,
   message: Extract<
@@ -531,176 +564,153 @@ function handleBattleMessage(
     { type: "join-battle" | "battle-typing" | "battle-set-text" | "battle-start-countdown" | "battle-reset" }
   >,
 ) {
+  const roomCode = message.roomCode || "battle";
+  const room = getBattleRoom(roomCode);
+  const clients = getBattleClients(roomCode);
+
   switch (message.type) {
     case "join-battle": {
-      const existingIds = Array.from(battleClients.keys());
-      for (const existingId of existingIds) {
-        if (battleClients.get(existingId)?.socket === socket) {
-          return;
-        }
+      for (const [, client] of clients) {
+        if (client.socket === socket) return;
       }
-
-      const player = addBattlePlayer(battleRoom, message.name);
-      battleClients.set(player.id, { socket });
-      publishBattleRoom();
+      const player = addBattlePlayer(room, message.name);
+      clients.set(player.id, { socket });
+      publishBattleRoom(roomCode, room, clients);
       break;
     }
     case "battle-typing": {
-      if (battleRoom.matchState !== "live") break;
-
-      const battleClientEntry = Array.from(battleClients.entries()).find(
-        ([, client]) => client.socket === socket,
-      );
-      if (!battleClientEntry) break;
-
-      const playerId = battleClientEntry[0];
-      const player = battleRoom.players.find((p) => p.id === playerId);
+      if (room.matchState !== "live") break;
+      const entry = Array.from(clients.entries()).find(([, c]) => c.socket === socket);
+      if (!entry) break;
+      const playerId = entry[0];
+      const player = room.players.find((p) => p.id === playerId);
       if (!player || player.finished) break;
 
       const incomingVersion =
         typeof message.typingVersion === "number"
           ? Math.max(0, Math.floor(message.typingVersion))
           : player.typingVersion + 1;
-
       if (incomingVersion < player.typingVersion) break;
 
-      const challenge = activeCatalog[battleRoom.selectedTextIndex]?.text ?? activeCatalog[0]?.text ?? "";
+      const challenge = activeCatalog[room.selectedTextIndex]?.text ?? activeCatalog[0]?.text ?? "";
       player.input = message.input.slice(0, challenge.length + INPUT_OVERTYPE_BUFFER);
       player.typingVersion = incomingVersion;
-      battleRoom.updatedAt = Date.now();
+      room.updatedAt = Date.now();
 
-      const stats = calculatePlayerStats(
-        player.input,
-        challenge,
-        battleRoom.startedAt ?? 0,
-        Date.now(),
-        player.finishedAt,
-      );
-
+      const stats = calculatePlayerStats(player.input, challenge, room.startedAt ?? 0, Date.now(), player.finishedAt);
       if (stats.progress >= 100) {
         player.finished = true;
         player.finishedAt = Date.now();
-        battleRoom.feed = [
-          `${player.name} terminó en ${stats.elapsedText} — ${stats.wpm} PPM, ${stats.accuracy}% precisión`,
-          ...battleRoom.feed,
-        ].slice(0, 10);
-        publishBattleRoom();
-
-        if (allBattlePlayersFinished(battleRoom)) {
-          finishBattle();
-        }
+        room.feed = [`${player.name} terminó en ${stats.elapsedText} — ${stats.wpm} PPM, ${stats.accuracy}% precisión`, ...room.feed].slice(0, 10);
+        publishBattleRoom(roomCode, room, clients);
+        if (allBattlePlayersFinished(room)) finishBattle(roomCode, room, clients);
         break;
       }
-
-      publishBattleTypingUpdate(playerId);
+      publishBattleTypingUpdate(roomCode, room, clients, playerId);
       break;
     }
     case "battle-set-text": {
-      if (battleRoom.matchState !== "lobby") {
+      if (room.matchState !== "lobby") {
         send(socket, { type: "error", message: "El texto solo puede cambiarse antes de comenzar." });
         return;
       }
       const maxIndex = Math.max(0, activeCatalog.length - 1);
-      battleRoom.selectedTextIndex = Math.max(0, Math.min(maxIndex, message.selectedTextIndex));
-      const challenge = activeCatalog[battleRoom.selectedTextIndex] ?? activeCatalog[0];
-      battleRoom.feed = [`Se cargó "${challenge.title}" (${challenge.difficulty.label}).`, ...battleRoom.feed].slice(0, 10);
-      battleRoom.updatedAt = Date.now();
-      publishBattleRoom();
+      room.selectedTextIndex = Math.max(0, Math.min(maxIndex, message.selectedTextIndex));
+      const challenge = activeCatalog[room.selectedTextIndex] ?? activeCatalog[0];
+      room.feed = [`Se cargó "${challenge.title}" (${challenge.difficulty.label}).`, ...room.feed].slice(0, 10);
+      room.updatedAt = Date.now();
+      publishBattleRoom(roomCode, room, clients);
       break;
     }
     case "battle-start-countdown": {
-      if (battleRoom.matchState !== "lobby") {
+      if (room.matchState !== "lobby") {
         send(socket, { type: "error", message: "La partida ya está en curso." });
         return;
       }
-      battleRoom.matchState = "countdown";
-      battleRoom.countdownEndsAt = Date.now() + 3000;
-      battleRoom.startedAt = null;
-      battleRoom.finishedAt = null;
-      for (const p of battleRoom.players) {
+      room.matchState = "countdown";
+      room.countdownEndsAt = Date.now() + 3000;
+      room.startedAt = null;
+      room.finishedAt = null;
+      for (const p of room.players) {
         p.input = "";
         p.typingVersion = 0;
         p.finished = false;
         p.finishedAt = null;
       }
-      battleRoom.feed = ["Cuenta regresiva iniciada: la batalla comienza en breve.", ...battleRoom.feed].slice(0, 10);
-      battleRoom.updatedAt = Date.now();
-      publishBattleRoom();
+      room.feed = ["Cuenta regresiva iniciada: la batalla comienza en breve.", ...room.feed].slice(0, 10);
+      room.updatedAt = Date.now();
+      publishBattleRoom(roomCode, room, clients);
       break;
     }
     case "battle-reset": {
-      battleRoom.matchState = "lobby";
-      battleRoom.countdownEndsAt = null;
-      battleRoom.startedAt = null;
-      battleRoom.finishedAt = null;
-      for (const p of battleRoom.players) {
+      room.matchState = "lobby";
+      room.countdownEndsAt = null;
+      room.startedAt = null;
+      room.finishedAt = null;
+      for (const p of room.players) {
         p.input = "";
         p.typingVersion = 0;
         p.finished = false;
         p.finishedAt = null;
         p.ready = false;
       }
-      battleRoom.feed = ["La sala de batalla volvió al lobby.", ...battleRoom.feed].slice(0, 10);
-      battleRoom.updatedAt = Date.now();
-      publishBattleRoom();
+      room.feed = [`La sala ${roomCode} volvió al lobby.`, ...room.feed].slice(0, 10);
+      room.updatedAt = Date.now();
+      publishBattleRoom(roomCode, room, clients);
       break;
     }
   }
 }
 
-function startBattle() {
-  battleRoom.matchState = "live";
-  battleRoom.countdownEndsAt = null;
-  battleRoom.startedAt = Date.now();
-  battleRoom.finishedAt = null;
-  for (const p of battleRoom.players) {
+function startBattle(roomCode: string, room: BattleRoom, clients: Map<BattlePlayerId, { socket: import("ws").WebSocket }>) {
+  room.matchState = "live";
+  room.countdownEndsAt = null;
+  room.startedAt = Date.now();
+  room.finishedAt = null;
+  for (const p of room.players) {
     p.input = "";
     p.typingVersion = 0;
     p.finished = false;
     p.finishedAt = null;
   }
-  battleRoom.feed = ["¡Comenzó la batalla!", ...battleRoom.feed].slice(0, 10);
-  battleRoom.updatedAt = Date.now();
-  publishBattleRoom();
+  room.feed = ["¡Comenzó la batalla!", ...room.feed].slice(0, 10);
+  room.updatedAt = Date.now();
+  publishBattleRoom(roomCode, room, clients);
 }
 
-function finishBattle() {
-  battleRoom.matchState = "finished";
-  battleRoom.finishedAt = Date.now();
-  battleRoom.feed = ["La batalla terminó. ¡Revisen la clasificación!", ...battleRoom.feed].slice(0, 10);
-  battleRoom.updatedAt = Date.now();
-  publishBattleRoom();
+function finishBattle(roomCode: string, room: BattleRoom, clients: Map<BattlePlayerId, { socket: import("ws").WebSocket }>) {
+  room.matchState = "finished";
+  room.finishedAt = Date.now();
+  room.feed = ["La batalla terminó. ¡Revisen la clasificación!", ...room.feed].slice(0, 10);
+  room.updatedAt = Date.now();
+  publishBattleRoom(roomCode, room, clients);
 }
 
-function publishBattleRoom() {
-  const payload = JSON.stringify({
-    type: "battle-snapshot",
-    room: battleRoom,
-  } satisfies ServerMessage);
-
-  for (const [, client] of battleClients) {
-    if (client.socket.readyState === WebSocket.OPEN) {
-      client.socket.send(payload);
-    }
+function publishBattleRoom(roomCode: string, room: BattleRoom, clients: Map<BattlePlayerId, { socket: import("ws").WebSocket }>) {
+  const payload = JSON.stringify({ type: "battle-snapshot", room } satisfies ServerMessage);
+  for (const [, client] of clients) {
+    if (client.socket.readyState === WebSocket.OPEN) client.socket.send(payload);
   }
 }
 
-function publishBattleTypingUpdate(playerId: BattlePlayerId) {
-  const player = battleRoom.players.find((p) => p.id === playerId);
+function publishBattleTypingUpdate(
+  roomCode: string,
+  room: BattleRoom,
+  clients: Map<BattlePlayerId, { socket: import("ws").WebSocket }>,
+  playerId: BattlePlayerId,
+) {
+  const player = room.players.find((p) => p.id === playerId);
   if (!player) return;
-
   const payload = JSON.stringify({
     type: "battle-typing-update",
+    roomCode,
     playerId,
     input: player.input,
     typingVersion: player.typingVersion,
-    updatedAt: battleRoom.updatedAt,
+    updatedAt: room.updatedAt,
   } satisfies ServerMessage);
-
-  for (const [, client] of battleClients) {
-    if (client.socket.readyState === WebSocket.OPEN) {
-      client.socket.send(payload);
-    }
+  for (const [, client] of clients) {
+    if (client.socket.readyState === WebSocket.OPEN) client.socket.send(payload);
   }
 }
 

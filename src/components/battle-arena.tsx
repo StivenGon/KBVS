@@ -18,9 +18,11 @@ type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 export default function BattleArena({
   playerName,
   isMaster,
+  roomCode,
 }: {
   playerName: string;
   isMaster: boolean;
+  roomCode: string;
 }) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [room, setRoom] = useState<BattleRoom | null>(null);
@@ -164,23 +166,23 @@ export default function BattleArena({
   }, [room?.matchState, room?.countdownEndsAt]);
 
   useEffect(() => {
-    if (!isLive || isMaster) return;
+    if (!room || room.matchState !== "live" || isMaster) return;
     const cursorEl = challengeTextRef.current?.querySelector<HTMLSpanElement>('[data-battle-cursor="true"]');
     if (cursorEl) {
       cursorEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [localInput, myStats?.typedCharacters, isLive, isMaster]);
+  }, [room?.updatedAt, room?.matchState, isMaster]);
 
   function send(socket: WebSocket, message: Record<string, unknown>) {
     if (socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(message));
+      socket.send(JSON.stringify({ ...message, roomCode }));
     }
   }
 
   function sendToServer(message: Record<string, unknown>) {
     const socket = socketRef.current;
     if (socket?.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(message));
+      socket.send(JSON.stringify({ ...message, roomCode }));
     }
   }
 
@@ -283,7 +285,7 @@ export default function BattleArena({
         {/* Header */}
         <div className="mb-4 flex items-center justify-between rounded-xl border border-white/10 bg-black/40 px-5 py-3 backdrop-blur">
           <div>
-            <span className="text-sm font-bold text-(--accent)">Sala Batalla</span>
+            <span className="text-sm font-bold text-(--accent)">Batalla #{roomCode}</span>
             {isMaster && (
               <span className="ml-2 text-xs text-amber-400">(Maestro)</span>
             )}
