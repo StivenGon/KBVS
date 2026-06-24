@@ -186,7 +186,9 @@ export default function BattleArena({
 
   if (!room) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-white/50">Conectando a la sala de batalla...</div>
+      <div className="flex min-h-screen items-center justify-center text-slate-500">
+        Conectando a la sala de batalla...
+      </div>
     );
   }
 
@@ -201,248 +203,268 @@ export default function BattleArena({
   const myStats = myPlayer
     ? calculatePlayerStats(myPlayer.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : Date.now(), myPlayer.finishedAt)
     : null;
-
-  function renderPlayerRow(p: BattlePlayer, stats: ReturnType<typeof calculatePlayerStats>) {
-    return (
-      <div key={p.id} className="rounded-lg border border-white/5 bg-black/30 px-4 py-2.5 backdrop-blur">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <span className="text-sm font-medium text-white/80 truncate max-w-[120px]">{p.name}</span>
-          <div className="flex items-center gap-3 text-xs text-white/40">
-            <span>{stats.progress}%</span>
-            <span>{stats.wpm} ppm</span>
-            <span>{stats.accuracy}%</span>
-            <span>{stats.mistakes} err</span>
-            {p.finished && <span className="text-emerald-400 font-bold">✓ {formatClock(stats.elapsed)}</span>}
-          </div>
-        </div>
-        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-          <div
-            className={`h-full rounded-full transition-all duration-200 ${p.finished ? "bg-emerald-400" : "bg-(--accent)"}`}
-            style={{ width: `${Math.min(100, stats.progress)}%` }}
-          />
-        </div>
-      </div>
-    );
-  }
+  const iFinished = myPlayer?.finished ?? false;
 
   return (
-    <main className="flex min-h-screen flex-col items-center px-2 py-4 sm:px-4">
-      <div className="w-full max-w-4xl">
-        {/* Header */}
-        <div className="mb-3 flex items-center justify-between rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 backdrop-blur">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-(--accent)">Batalla #{roomCode}</span>
-            {isMaster && <span className="text-xs text-amber-400">(Maestro)</span>}
-            <span className={`rounded-full px-2 py-0.5 text-[10px] ${
-              isLobby ? "bg-emerald-500/20 text-emerald-300" :
-              showCountdown ? "bg-amber-500/20 text-amber-300" :
-              isLive ? "bg-sky-500/20 text-sky-300" :
-              "bg-purple-500/20 text-purple-300"
-            }`}>
-              {isLobby ? "Lobby" : showCountdown ? "Cuenta regresiva" : isLive ? "En vivo" : "Terminada"}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-[10px]">
-            <span className="text-white/30">{room.players.length} jug.</span>
-            <span className={`h-2 w-2 rounded-full ${
-              connectionState === "connected" ? "bg-emerald-400" : connectionState === "connecting" ? "bg-amber-400" : "bg-red-400"
-            }`} />
+    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-3 py-3 sm:px-4 sm:py-4">
+      {/* Header bar */}
+      <header className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 shadow-sm backdrop-blur">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold uppercase tracking-[0.2em] text-(--accent)">Batalla #{roomCode}</span>
+          {isMaster && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">Maestro</span>}
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+            isLobby ? "bg-emerald-50 text-emerald-700" :
+            showCountdown ? "bg-amber-50 text-amber-700" :
+            isLive ? "bg-sky-50 text-sky-700" :
+            "bg-purple-50 text-purple-700"
+          }`}>
+            {isLobby ? "Lobby" : showCountdown ? "Cuenta regresiva" : isLive ? "En vivo" : "Terminada"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-[10px] text-slate-400">
+          <span>{room.players.length} jugadores</span>
+          <span className={`h-1.5 w-1.5 rounded-full ${
+            connectionState === "connected" ? "bg-emerald-500" : connectionState === "connecting" ? "bg-amber-500" : "bg-red-500"
+          }`} />
+        </div>
+      </header>
+
+      {/* Master controls */}
+      {isMaster && isLobby && (
+        <div className="mb-3 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm backdrop-blur">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsCatalogModalOpen(true)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 transition"
+            >
+              {challenge.title} ({challenge.difficulty.label})
+            </button>
+            <button
+              type="button"
+              onClick={() => sendToServer({ type: "battle-start-countdown" })}
+              disabled={room.players.length === 0 || catalogLoading}
+              className="rounded-xl bg-(--accent) px-4 py-1.5 text-xs font-semibold text-white hover:brightness-105 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              Iniciar batalla
+            </button>
           </div>
         </div>
+      )}
 
-        {/* Master controls — visible at all times */}
-        {isMaster && isLobby && (
-          <div className="mb-3 rounded-xl border border-white/10 bg-black/40 p-3 backdrop-blur">
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setIsCatalogModalOpen(true)}
-                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white hover:bg-white/10 transition"
-              >
-                Texto: {challenge.title} ({challenge.difficulty.label})
-              </button>
-              <button
-                type="button"
-                onClick={() => sendToServer({ type: "battle-start-countdown" })}
-                disabled={room.players.length === 0 || catalogLoading}
-                className="rounded-lg bg-(--accent) px-4 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Iniciar batalla
-              </button>
-            </div>
-          </div>
-        )}
+      {isMaster && (showCountdown || isLive) && (
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 shadow-sm backdrop-blur">
+          <span className="text-xs text-slate-500">
+            {showCountdown
+              ? `Iniciando en ${room.countdownEndsAt ? Math.max(1, Math.ceil((room.countdownEndsAt - clockTick) / 1000)) : "..."}s`
+              : `⏱ ${room.startedAt ? formatClock(clockTick - room.startedAt) : "00:00.00"}`}
+          </span>
+          <button
+            type="button"
+            onClick={() => sendToServer({ type: "battle-reset" })}
+            className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1 text-[10px] font-medium text-rose-600 hover:bg-rose-100 transition"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
 
-        {isMaster && (isLive || showCountdown) && (
-          <div className="mb-3 rounded-xl border border-white/10 bg-black/40 p-2.5 backdrop-blur">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="text-xs text-white/50">
-                {showCountdown ? `Iniciando en ${room.countdownEndsAt ? Math.max(1, Math.ceil((room.countdownEndsAt - clockTick) / 1000)) : "..."}...` :
-                  `⏱ ${room.startedAt ? formatClock(clockTick - room.startedAt) : "00:00.00"}`}
-              </span>
-              <button
-                type="button"
-                onClick={() => sendToServer({ type: "battle-reset" })}
-                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs text-rose-300 hover:bg-rose-500/20 transition"
-              >
-                Cancelar / Reiniciar
-              </button>
-            </div>
-          </div>
-        )}
+      {isMaster && isFinished && (
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2 shadow-sm backdrop-blur">
+          <span className="text-xs font-medium text-emerald-600">Batalla finalizada</span>
+          <button
+            type="button"
+            onClick={() => sendToServer({ type: "battle-reset" })}
+            className="rounded-lg bg-(--accent) px-4 py-1.5 text-xs font-semibold text-white hover:brightness-105 transition"
+          >
+            Nueva batalla
+          </button>
+        </div>
+      )}
 
-        {isMaster && isFinished && (
-          <div className="mb-3 rounded-xl border border-white/10 bg-black/40 p-2.5 backdrop-blur">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-emerald-400">Batalla finalizada</span>
-              <button
-                type="button"
-                onClick={() => sendToServer({ type: "battle-reset" })}
-                className="rounded-lg bg-(--accent) px-3 py-1 text-xs font-semibold text-white transition hover:brightness-110"
-              >
-                Nueva batalla
-              </button>
-            </div>
-          </div>
-        )}
+      {/* Countdown */}
+      {showCountdown && (
+        <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center">
+          <span className="text-4xl font-bold text-amber-600">
+            {room.countdownEndsAt ? Math.max(1, Math.ceil((room.countdownEndsAt - clockTick) / 1000)) : "..."}
+          </span>
+          <p className="mt-1 text-xs text-amber-500">Preparate para escribir...</p>
+        </div>
+      )}
 
-        {/* Countdown for players */}
-        {showCountdown && (
-          <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center backdrop-blur">
-            <span className="text-3xl font-bold text-amber-300">
-              {room.countdownEndsAt ? Math.max(1, Math.ceil((room.countdownEndsAt - clockTick) / 1000)) : "..."}
-            </span>
-            <p className="mt-1 text-xs text-amber-200/70">Preparate para escribir...</p>
-          </div>
-        )}
-
-        {/* Challenge text - simplified for master, colored for player */}
-        {(isLive || isFinished) && (
-          <div className="mb-3 rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur">
-            <div className="mb-1 flex items-center gap-2">
-              <span className="text-xs font-semibold text-white/50">{challenge.title}</span>
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                challenge.difficulty.tone === "emerald" ? "bg-emerald-500/20 text-emerald-300" :
-                challenge.difficulty.tone === "amber" ? "bg-amber-500/20 text-amber-300" :
-                "bg-rose-500/20 text-rose-300"
-              }`}>{challenge.difficulty.label}</span>
-            </div>
-            {isMaster ? (
-              <p className="text-lg leading-relaxed text-white/70">{challenge.text}</p>
-            ) : (
-              <p
-                ref={challengeTextRef}
-                className="max-h-[28vh] overflow-y-auto text-lg leading-relaxed text-white/90 select-none scroll-smooth"
-                style={{ wordBreak: "break-word" }}
-              >
-                {challenge.text.split("").map((char, i) => {
-                  const isCorrect = myStats && i < myStats.correctCharacters;
-                  const isError = myStats && i < (myStats.typedCharacters) && i >= myStats.correctCharacters;
-                  const isCursor = myStats && i === (myStats.typedCharacters ?? 0);
-                  let color = "text-white/30";
-                  if (isCorrect) color = "text-emerald-400";
-                  else if (isError) color = "text-rose-400 bg-rose-500/30";
-                  else if (isCursor) color = "text-(--accent)";
-                  return <span key={i} className={color} data-battle-cursor={isCursor ? "true" : undefined}>{char}</span>;
-                })}
-              </p>
+      {/* Two-column layout for live/finished */}
+      {(isLive || isFinished || isLobby || showCountdown) && (
+        <div className="grid gap-3 lg:grid-cols-[1fr_300px]">
+          {/* Left column: challenge + input */}
+          <div className="space-y-3">
+            {/* Challenge text */}
+            {(isLive || isFinished) && (
+              <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm backdrop-blur">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">{challenge.title}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    challenge.difficulty.tone === "emerald" ? "bg-emerald-50 text-emerald-600" :
+                    challenge.difficulty.tone === "amber" ? "bg-amber-50 text-amber-600" :
+                    "bg-rose-50 text-rose-600"
+                  }`}>{challenge.difficulty.label}</span>
+                </div>
+                {isMaster ? (
+                  <p className="text-lg leading-relaxed text-slate-700">{challenge.text}</p>
+                ) : (
+                  <p
+                    ref={challengeTextRef}
+                    className="max-h-[30vh] overflow-y-auto text-lg leading-relaxed select-none scroll-smooth"
+                    style={{ wordBreak: "break-word" }}
+                  >
+                    {challenge.text.split("").map((char, i) => {
+                      if (!myStats) return <span key={i} className="text-slate-300">{char}</span>;
+                      const isCorrect = i < myStats.correctCharacters;
+                      const isError = i < myStats.typedCharacters && i >= myStats.correctCharacters;
+                      const isCursor = i === myStats.typedCharacters;
+                      let c = "text-slate-300";
+                      if (isCorrect) c = "text-emerald-600 font-medium";
+                      else if (isError) c = "text-rose-600 bg-rose-100 rounded-sm";
+                      else if (isCursor) c = "text-(--accent) font-bold underline decoration-(--accent) underline-offset-2";
+                      return <span key={i} className={c} data-battle-cursor={isCursor ? "true" : undefined}>{char}</span>;
+                    })}
+                  </p>
+                )}
+              </div>
             )}
-          </div>
-        )}
 
-        {/* Player typing input */}
-        {isLive && !isMaster && (
-          <div className="mb-3">
-            <textarea
-              ref={typingInputRef}
-              value={localInput}
-              onChange={(e) => handleTypingChange(e.target.value)}
-              disabled={myPlayer?.finished}
-              placeholder={myPlayer?.finished ? "¡Terminaste! Esperá a los demás..." : "Escribí el texto aquí..."}
-              className="w-full rounded-xl border border-(--accent)/30 bg-black/50 px-4 py-3 text-lg text-white placeholder-white/20 outline-none backdrop-blur resize-none"
-              rows={2}
-              autoFocus
-              onPaste={(e) => e.preventDefault()}
-              onDrop={(e) => e.preventDefault()}
-            />
-            {myStats && (
-              <div className="mt-2 flex gap-4 text-xs text-white/50">
-                <span>{myStats.correctCharacters}/{myStats.targetCharacters} car.</span>
-                <span>{myStats.wpm} PPM</span>
-                <span>{myStats.accuracy}% prec.</span>
-                <span>{myStats.mistakes} errores</span>
+            {/* Typing input */}
+            {isLive && !isMaster && (
+              <div>
+                {iFinished ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center">
+                    <p className="text-sm font-medium text-emerald-700">¡Terminaste! 🎉</p>
+                    <p className="mt-1 text-xs text-emerald-500">Esperá a que todos terminen para ver los resultados...</p>
+                  </div>
+                ) : (
+                  <textarea
+                    ref={typingInputRef}
+                    value={localInput}
+                    onChange={(e) => handleTypingChange(e.target.value)}
+                    placeholder="Escribí el texto aquí..."
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-lg text-slate-900 placeholder-slate-300 outline-none focus:border-(--accent)/40 focus:ring-2 focus:ring-(--accent)/10 resize-none shadow-sm"
+                    rows={2}
+                    autoFocus
+                    onPaste={(e) => e.preventDefault()}
+                    onDrop={(e) => e.preventDefault()}
+                  />
+                )}
+                {myStats && (
+                  <div className="mt-2 flex gap-4 text-[10px] text-slate-400">
+                    <span>{myStats.correctCharacters}/{myStats.targetCharacters} caracteres</span>
+                    <span>{myStats.wpm} PPM</span>
+                    <span>{myStats.accuracy}% precisión</span>
+                    <span>{myStats.mistakes} errores</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Empty state hint */}
+            {isLobby && !isMaster && (
+              <div className="rounded-2xl border border-slate-200 bg-white/80 p-6 text-center shadow-sm">
+                <p className="text-sm text-slate-500">Esperando que el maestro inicie la batalla...</p>
+                <p className="mt-1 text-xs text-slate-300">Código de sala: <span className="font-mono font-bold text-(--accent)">{roomCode}</span></p>
+              </div>
+            )}
+
+            {/* Final ranking */}
+            {isFinished && ranking.length > 0 && (
+              <div className="rounded-2xl border border-(--accent)/10 bg-white/90 p-5 shadow-sm">
+                <h2 className="mb-3 text-center text-lg font-bold text-slate-800">Clasificación Final</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs sm:text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-[10px] uppercase tracking-[0.15em] text-slate-400">
+                        <th className="px-2 py-1.5 text-left">#</th>
+                        <th className="px-2 py-1.5 text-left">Jugador</th>
+                        <th className="px-2 py-1.5 text-right">PPM</th>
+                        <th className="px-2 py-1.5 text-right">Prec.</th>
+                        <th className="px-2 py-1.5 text-right">Err.</th>
+                        <th className="px-2 py-1.5 text-right">Tiempo</th>
+                        <th className="px-2 py-1.5 text-right">Puntaje</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ranking.map((entry) => (
+                        <tr key={entry.name} className={`border-b border-slate-50 ${entry.position === 1 ? "bg-amber-50/60" : ""}`}>
+                          <td className="px-2 py-2 font-bold text-slate-700">
+                            {entry.position === 1 ? "🥇" : entry.position === 2 ? "🥈" : entry.position === 3 ? "🥉" : entry.position}
+                          </td>
+                          <td className={`px-2 py-2 ${entry.position === 1 ? "font-bold text-amber-700" : "text-slate-700"}`}>{entry.name}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-slate-500">{entry.wpm}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-slate-500">{entry.accuracy}%</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-slate-500">{entry.errors}</td>
+                          <td className="px-2 py-2 text-right tabular-nums font-mono text-slate-500">{entry.elapsedText}</td>
+                          <td className="px-2 py-2 text-right font-mono font-bold text-(--accent)">{entry.score}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Activity */}
+            <div className="rounded-2xl border border-slate-100 bg-white/50 p-3">
+              <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-300">Actividad</h3>
+              <div className="space-y-0.5">
+                {room.feed.slice(0, 5).map((msg, i) => (
+                  <p key={i} className="text-[10px] text-slate-400">{msg}</p>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Right column: player progress sidebar */}
+          <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm backdrop-blur lg:sticky lg:top-20 lg:self-start">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+              {isLive ? "Progreso en vivo" : isFinished ? "Resultados" : `Jugadores (${room.players.length})`}
+            </h2>
+            {room.players.length > 0 ? (
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                {room.players.map((p) => {
+                  const stats = calculatePlayerStats(p.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : Date.now(), p.finishedAt);
+                  return (
+                    <div key={p.id} className="rounded-xl border border-slate-100 bg-white px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-xs font-medium truncate max-w-[100px] ${p.finished ? "text-emerald-700" : "text-slate-700"}`}>
+                          {p.name} {p.finished ? "✓" : ""}
+                        </span>
+                        <span className="text-[10px] tabular-nums text-slate-400">
+                          {p.finished ? formatClock(stats.elapsed) : `${stats.progress}%`}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={`h-full rounded-full transition-all duration-200 ${p.finished ? "bg-emerald-500" : "bg-(--accent)"}`}
+                          style={{ width: `${Math.min(100, stats.progress)}%` }}
+                        />
+                      </div>
+                      <div className="mt-1 flex gap-3 text-[9px] text-slate-400">
+                        <span>{stats.wpm} ppm</span>
+                        <span>{stats.accuracy}%</span>
+                        <span>{stats.mistakes} err</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-6 text-center">
+                <p className="text-xs text-slate-300">Sin jugadores aún</p>
+                <p className="mt-1 text-[10px] text-slate-200">
+                  Código: <span className="font-mono font-bold text-(--accent)">{roomCode}</span>
+                </p>
               </div>
             )}
           </div>
-        )}
-
-        {/* Player list + live progress - redesigned for many players */}
-        {(isLobby || showCountdown || isLive || isFinished) && room.players.length > 0 && (
-          <div className="mb-3 rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur">
-            <h2 className="mb-3 text-sm font-semibold text-white/60">
-              {isLive ? "Progreso en vivo" : isFinished ? "Resultados" : `Jugadores conectados (${room.players.length})`}
-            </h2>
-            <div className="space-y-2">
-              {room.players.map((p) => {
-                const stats = calculatePlayerStats(p.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : Date.now(), p.finishedAt);
-                return renderPlayerRow(p, stats);
-              })}
-            </div>
-          </div>
-        )}
-
-        {room.players.length === 0 && (
-          <div className="mb-3 rounded-xl border border-white/5 bg-black/20 p-6 text-center backdrop-blur">
-            <p className="text-sm text-white/30">Esperando jugadores...</p>
-            <p className="mt-1 text-xs text-white/20">Compartí el código <span className="text-(--accent) font-mono">{roomCode}</span> para que se unan</p>
-          </div>
-        )}
-
-        {/* Ranking table */}
-        {isFinished && ranking.length > 0 && (
-          <div className="mb-3 rounded-xl border border-(--accent)/20 bg-black/40 p-4 backdrop-blur">
-            <h2 className="mb-3 text-center text-lg font-bold text-(--accent)">Clasificación Final</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs sm:text-sm">
-                <thead>
-                  <tr className="border-b border-white/10 text-white/50">
-                    <th className="px-2 py-1.5 text-left">#</th>
-                    <th className="px-2 py-1.5 text-left">Jugador</th>
-                    <th className="px-2 py-1.5 text-right">PPM</th>
-                    <th className="px-2 py-1.5 text-right">Prec.</th>
-                    <th className="px-2 py-1.5 text-right">Err.</th>
-                    <th className="px-2 py-1.5 text-right">Tiempo</th>
-                    <th className="px-2 py-1.5 text-right">Puntaje</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ranking.map((entry) => (
-                    <tr key={entry.name} className={`border-b border-white/5 ${entry.position === 1 ? "bg-amber-400/10" : ""}`}>
-                      <td className="px-2 py-1.5 font-bold">{entry.position === 1 ? "🥇" : entry.position === 2 ? "🥈" : entry.position === 3 ? "🥉" : entry.position}</td>
-                      <td className={`px-2 py-1.5 ${entry.position === 1 ? "font-bold text-amber-300" : "text-white/80"}`}>{entry.name}</td>
-                      <td className="px-2 py-1.5 text-right text-white/70">{entry.wpm}</td>
-                      <td className="px-2 py-1.5 text-right text-white/70">{entry.accuracy}%</td>
-                      <td className="px-2 py-1.5 text-right text-white/70">{entry.errors}</td>
-                      <td className="px-2 py-1.5 text-right text-white/70">{entry.elapsedText}</td>
-                      <td className="px-2 py-1.5 text-right font-mono font-bold text-(--accent)">{entry.score}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Activity feed */}
-        <div className="rounded-xl border border-white/5 bg-black/20 p-3 backdrop-blur">
-          <h3 className="mb-1.5 text-[10px] font-semibold text-white/25">Actividad</h3>
-          <div className="space-y-0.5">
-            {room.feed.slice(0, 5).map((msg, i) => (
-              <p key={i} className="text-[10px] text-white/35">{msg}</p>
-            ))}
-          </div>
         </div>
-      </div>
+      )}
 
       {isMaster && (
         <TextCatalogModal
