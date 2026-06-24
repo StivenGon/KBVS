@@ -51,20 +51,13 @@ export default function BattleArena({
       const response = await fetch("/api/text-catalog", { cache: "no-store" });
       if (response.ok) {
         const payload = (await response.json()) as { texts?: CatalogText[] };
-        if (payload.texts?.length) {
-          setTextCatalog(payload.texts);
-        }
+        if (payload.texts?.length) setTextCatalog(payload.texts);
       }
-    } catch {
-      setTextCatalog(buildFallbackCatalog());
-    } finally {
-      setCatalogLoading(false);
-    }
+    } catch { setTextCatalog(buildFallbackCatalog()); }
+    finally { setCatalogLoading(false); }
   }, []);
 
-  useEffect(() => {
-    void refreshCatalog();
-  }, [refreshCatalog]);
+  useEffect(() => { void refreshCatalog(); }, [refreshCatalog]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -74,18 +67,10 @@ export default function BattleArena({
 
     const connect = () => {
       if (!mountedRef.current) return;
-
       if (socketRef.current?.readyState === WebSocket.OPEN) {
-        if (!joined) {
-          send(socketRef.current, {
-            type: "join-battle",
-            name: displayName,
-          });
-          setJoined(true);
-        }
+        if (!joined) { send(socketRef.current, { type: "join-battle", name: displayName }); setJoined(true); }
         return;
       }
-
       setConnectionState("connecting");
       const socket = new WebSocket(resolvedSocketUrl);
       socketRef.current = socket;
@@ -93,21 +78,14 @@ export default function BattleArena({
       socket.onopen = () => {
         reconnectDelay = 1000;
         setConnectionState("connected");
-        send(socket, {
-          type: "join-battle",
-          name: displayName,
-        });
+        send(socket, { type: "join-battle", name: displayName });
         setJoined(true);
       };
 
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data as string);
-
-          if (payload.type === "battle-snapshot") {
-            setRoom(payload.room);
-          }
-
+          if (payload.type === "battle-snapshot") setRoom(payload.room);
           if (payload.type === "battle-typing-update") {
             setRoom((current) => {
               if (!current) return current;
@@ -115,48 +93,29 @@ export default function BattleArena({
                 ...current,
                 players: current.players.map((p) =>
                   p.id === payload.playerId
-                    ? {
-                        ...p,
-                        input: payload.input,
-                        typingVersion: payload.typingVersion,
-                      }
-                    : p,
-                ),
+                    ? { ...p, input: payload.input, typingVersion: payload.typingVersion }
+                    : p),
                 updatedAt: payload.updatedAt,
               };
             });
           }
-
-          if (payload.type === "error") {
-            setConnectionState("error");
-          }
-        } catch {
-          setConnectionState("error");
-        }
+          if (payload.type === "error") setConnectionState("error");
+        } catch { setConnectionState("error"); }
       };
 
       socket.onerror = () => setConnectionState("error");
-
       socket.onclose = () => {
         if (!mountedRef.current) return;
-        setConnectionState("disconnected");
-        setJoined(false);
-
-        if (reconnectTimerRef.current !== null) {
-          window.clearTimeout(reconnectTimerRef.current);
-        }
+        setConnectionState("disconnected"); setJoined(false);
+        if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = window.setTimeout(connect, reconnectDelay);
         reconnectDelay = Math.min(reconnectDelay * 1.5, maxReconnectDelay);
       };
     };
-
     connect();
-
     return () => {
       mountedRef.current = false;
-      if (reconnectTimerRef.current !== null) {
-        window.clearTimeout(reconnectTimerRef.current);
-      }
+      if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
       socketRef.current?.close();
     };
   }, [displayName]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -170,22 +129,15 @@ export default function BattleArena({
   useEffect(() => {
     if (!room || room.matchState !== "live" || isMaster) return;
     const cursorEl = challengeTextRef.current?.querySelector<HTMLSpanElement>('[data-battle-cursor="true"]');
-    if (cursorEl) {
-      cursorEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
+    if (cursorEl) cursorEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [room?.updatedAt, room?.matchState, isMaster]);
 
   function send(socket: WebSocket, message: Record<string, unknown>) {
-    if (socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ ...message, roomCode }));
-    }
+    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ ...message, roomCode }));
   }
 
   function sendToServer(message: Record<string, unknown>) {
-    const socket = socketRef.current;
-    if (socket?.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ ...message, roomCode }));
-    }
+    if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ ...message, roomCode }));
   }
 
   function flushQueuedTyping() {
@@ -193,25 +145,17 @@ export default function BattleArena({
     const pendingTyping = queuedTypingRef.current;
     if (!pendingTyping) return;
     queuedTypingRef.current = null;
-    sendToServer({
-      type: "battle-typing",
-      input: pendingTyping.input,
-      typingVersion: pendingTyping.typingVersion,
-    });
+    sendToServer({ type: "battle-typing", input: pendingTyping.input, typingVersion: pendingTyping.typingVersion });
   }
 
   function handleTypingChange(value: string) {
     const challenge = textCatalog[room?.selectedTextIndex ?? 0]?.text ?? "";
     const clamped = value.slice(0, challenge.length + 24);
     setLocalInput(clamped);
-
     const version = localTypingVersionRef.current + 1;
     localTypingVersionRef.current = version;
     queuedTypingRef.current = { input: clamped, typingVersion: version };
-
-    if (typingSendRafRef.current === null) {
-      typingSendRafRef.current = window.requestAnimationFrame(flushQueuedTyping);
-    }
+    if (typingSendRafRef.current === null) typingSendRafRef.current = window.requestAnimationFrame(flushQueuedTyping);
   }
 
   function getActiveChallenge() {
@@ -223,24 +167,12 @@ export default function BattleArena({
     if (!room) return [];
     const challenge = getActiveChallenge().text;
     const now = room.finishedAt ?? Date.now();
-
     return room.players
       .map((p) => {
-        const stats = calculatePlayerStats(
-          p.input,
-          challenge,
-          room.startedAt ?? 0,
-          now,
-          p.finishedAt,
-        );
+        const stats = calculatePlayerStats(p.input, challenge, room.startedAt ?? 0, now, p.finishedAt);
         return {
-          name: p.name,
-          position: 0,
-          wpm: stats.wpm,
-          accuracy: stats.accuracy,
-          errors: stats.mistakes,
-          elapsed: stats.elapsed,
-          elapsedText: stats.elapsedText,
+          name: p.name, position: 0, wpm: stats.wpm, accuracy: stats.accuracy,
+          errors: stats.mistakes, elapsed: stats.elapsed, elapsedText: stats.elapsedText,
           progress: stats.progress,
           score: Math.max(0, Math.round(stats.wpm * 2.2 + stats.accuracy * 1.15 - stats.mistakes * 4 + stats.progress * 0.25)),
         };
@@ -249,17 +181,12 @@ export default function BattleArena({
         if (b.progress >= 100 && a.progress >= 100) return a.elapsed - b.elapsed;
         return b.progress - a.progress;
       })
-      .map((entry, i) => ({
-        ...entry,
-        position: i + 1,
-      }));
+      .map((entry, i) => ({ ...entry, position: i + 1 }));
   }
 
   if (!room) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-white/50">
-        Conectando a la sala de batalla...
-      </div>
+      <div className="flex min-h-screen items-center justify-center text-white/50">Conectando a la sala de batalla...</div>
     );
   }
 
@@ -272,78 +199,73 @@ export default function BattleArena({
 
   const myPlayer = room.players.find((p) => p.name === displayName);
   const myStats = myPlayer
-    ? calculatePlayerStats(
-        myPlayer.input,
-        challenge.text,
-        room.startedAt ?? 0,
-        isFinished ? (room.finishedAt ?? Date.now()) : Date.now(),
-        myPlayer.finishedAt,
-      )
+    ? calculatePlayerStats(myPlayer.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : Date.now(), myPlayer.finishedAt)
     : null;
 
+  function renderPlayerRow(p: BattlePlayer, stats: ReturnType<typeof calculatePlayerStats>) {
+    return (
+      <div key={p.id} className="rounded-lg border border-white/5 bg-black/30 px-4 py-2.5 backdrop-blur">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <span className="text-sm font-medium text-white/80 truncate max-w-[120px]">{p.name}</span>
+          <div className="flex items-center gap-3 text-xs text-white/40">
+            <span>{stats.progress}%</span>
+            <span>{stats.wpm} ppm</span>
+            <span>{stats.accuracy}%</span>
+            <span>{stats.mistakes} err</span>
+            {p.finished && <span className="text-emerald-400 font-bold">✓ {formatClock(stats.elapsed)}</span>}
+          </div>
+        </div>
+        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className={`h-full rounded-full transition-all duration-200 ${p.finished ? "bg-emerald-400" : "bg-(--accent)"}`}
+            style={{ width: `${Math.min(100, stats.progress)}%` }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <main className="flex min-h-screen flex-col items-center px-4 py-6">
+    <main className="flex min-h-screen flex-col items-center px-2 py-4 sm:px-4">
       <div className="w-full max-w-4xl">
         {/* Header */}
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-white/10 bg-black/40 px-5 py-3 backdrop-blur">
-          <div>
+        <div className="mb-3 flex items-center justify-between rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 backdrop-blur">
+          <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-(--accent)">Batalla #{roomCode}</span>
-            {isMaster && (
-              <span className="ml-2 text-xs text-amber-400">(Maestro)</span>
-            )}
+            {isMaster && <span className="text-xs text-amber-400">(Maestro)</span>}
+            <span className={`rounded-full px-2 py-0.5 text-[10px] ${
+              isLobby ? "bg-emerald-500/20 text-emerald-300" :
+              showCountdown ? "bg-amber-500/20 text-amber-300" :
+              isLive ? "bg-sky-500/20 text-sky-300" :
+              "bg-purple-500/20 text-purple-300"
+            }`}>
+              {isLobby ? "Lobby" : showCountdown ? "Cuenta regresiva" : isLive ? "En vivo" : "Terminada"}
+            </span>
           </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="text-white/40">{connectionState}</span>
+          <div className="flex items-center gap-2 text-[10px]">
+            <span className="text-white/30">{room.players.length} jug.</span>
             <span className={`h-2 w-2 rounded-full ${
-              connectionState === "connected" ? "bg-emerald-400" :
-              connectionState === "connecting" ? "bg-amber-400" : "bg-red-400"
+              connectionState === "connected" ? "bg-emerald-400" : connectionState === "connecting" ? "bg-amber-400" : "bg-red-400"
             }`} />
           </div>
         </div>
 
-        {/* Players list */}
-        <div className="mb-4 rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur">
-          <h2 className="mb-2 text-sm font-semibold text-white/70">
-            Jugadores ({room.players.length})
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {room.players.map((p) => (
-              <span
-                key={p.id}
-                className={`rounded-full px-3 py-1 text-xs ${
-                  p.finished
-                    ? "bg-emerald-500/20 text-emerald-300"
-                    : p.connected
-                      ? "bg-(--accent)/20 text-(--accent)"
-                      : "bg-red-500/20 text-red-300 line-through"
-                }`}
-              >
-                {p.name}
-                {p.finished ? " ✓" : ""}
-              </span>
-            ))}
-            {room.players.length === 0 && (
-              <span className="text-xs text-white/30">Esperando jugadores...</span>
-            )}
-          </div>
-        </div>
-
-        {/* Master controls */}
+        {/* Master controls — visible at all times */}
         {isMaster && isLobby && (
-          <div className="mb-4 rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur">
-            <div className="flex items-center gap-3 flex-wrap">
+          <div className="mb-3 rounded-xl border border-white/10 bg-black/40 p-3 backdrop-blur">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => setIsCatalogModalOpen(true)}
-                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10 transition"
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white hover:bg-white/10 transition"
               >
-                Elegir texto ({textCatalog[room.selectedTextIndex]?.title ?? "..."})
+                Texto: {challenge.title} ({challenge.difficulty.label})
               </button>
               <button
                 type="button"
                 onClick={() => sendToServer({ type: "battle-start-countdown" })}
                 disabled={room.players.length === 0 || catalogLoading}
-                className="rounded-lg bg-(--accent) px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg bg-(--accent) px-4 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Iniciar batalla
               </button>
@@ -351,64 +273,86 @@ export default function BattleArena({
           </div>
         )}
 
-        {/* Countdown */}
-        {showCountdown && (
-          <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 text-center backdrop-blur">
-            <span className="text-4xl font-bold text-amber-300">
-              {room.countdownEndsAt
-                ? Math.max(1, Math.ceil((room.countdownEndsAt - clockTick) / 1000))
-                : "..."}
-            </span>
-            <p className="mt-1 text-sm text-amber-200/70">Preparate para escribir...</p>
+        {isMaster && (isLive || showCountdown) && (
+          <div className="mb-3 rounded-xl border border-white/10 bg-black/40 p-2.5 backdrop-blur">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs text-white/50">
+                {showCountdown ? `Iniciando en ${room.countdownEndsAt ? Math.max(1, Math.ceil((room.countdownEndsAt - clockTick) / 1000)) : "..."}...` :
+                  `⏱ ${room.startedAt ? formatClock(clockTick - room.startedAt) : "00:00.00"}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => sendToServer({ type: "battle-reset" })}
+                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs text-rose-300 hover:bg-rose-500/20 transition"
+              >
+                Cancelar / Reiniciar
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Challenge text */}
+        {isMaster && isFinished && (
+          <div className="mb-3 rounded-xl border border-white/10 bg-black/40 p-2.5 backdrop-blur">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-emerald-400">Batalla finalizada</span>
+              <button
+                type="button"
+                onClick={() => sendToServer({ type: "battle-reset" })}
+                className="rounded-lg bg-(--accent) px-3 py-1 text-xs font-semibold text-white transition hover:brightness-110"
+              >
+                Nueva batalla
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Countdown for players */}
+        {showCountdown && (
+          <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center backdrop-blur">
+            <span className="text-3xl font-bold text-amber-300">
+              {room.countdownEndsAt ? Math.max(1, Math.ceil((room.countdownEndsAt - clockTick) / 1000)) : "..."}
+            </span>
+            <p className="mt-1 text-xs text-amber-200/70">Preparate para escribir...</p>
+          </div>
+        )}
+
+        {/* Challenge text - simplified for master, colored for player */}
         {(isLive || isFinished) && (
-          <div className="mb-4 rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur">
+          <div className="mb-3 rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur">
             <div className="mb-1 flex items-center gap-2">
               <span className="text-xs font-semibold text-white/50">{challenge.title}</span>
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                challenge.difficulty.tone === "emerald"
-                  ? "bg-emerald-500/20 text-emerald-300"
-                  : challenge.difficulty.tone === "amber"
-                    ? "bg-amber-500/20 text-amber-300"
-                    : "bg-rose-500/20 text-rose-300"
-              }`}>
-                {challenge.difficulty.label}
-              </span>
+                challenge.difficulty.tone === "emerald" ? "bg-emerald-500/20 text-emerald-300" :
+                challenge.difficulty.tone === "amber" ? "bg-amber-500/20 text-amber-300" :
+                "bg-rose-500/20 text-rose-300"
+              }`}>{challenge.difficulty.label}</span>
             </div>
-            <p
-              ref={challengeTextRef}
-              className="max-h-[28vh] overflow-y-auto text-lg leading-relaxed text-white/90 select-none scroll-smooth"
-              style={{ wordBreak: "break-word", scrollBehavior: "smooth" }}
-            >
-              {challenge.text.split("").map((char, i) => {
-                const isCorrect = myStats && i < myStats.correctCharacters;
-                const isError = myStats && i < (myStats.typedCharacters) && i >= myStats.correctCharacters;
-                const isCursor = myStats && i === (myStats.typedCharacters ?? 0);
-                let color = "text-white/30";
-                if (isCorrect) color = "text-emerald-400";
-                else if (isError) color = "text-rose-400 bg-rose-500/30";
-                else if (isCursor) color = "text-(--accent)";
-
-                return (
-                  <span
-                    key={i}
-                    className={color}
-                    data-battle-cursor={isCursor ? "true" : undefined}
-                  >
-                    {char}
-                  </span>
-                );
-              })}
-            </p>
+            {isMaster ? (
+              <p className="text-lg leading-relaxed text-white/70">{challenge.text}</p>
+            ) : (
+              <p
+                ref={challengeTextRef}
+                className="max-h-[28vh] overflow-y-auto text-lg leading-relaxed text-white/90 select-none scroll-smooth"
+                style={{ wordBreak: "break-word" }}
+              >
+                {challenge.text.split("").map((char, i) => {
+                  const isCorrect = myStats && i < myStats.correctCharacters;
+                  const isError = myStats && i < (myStats.typedCharacters) && i >= myStats.correctCharacters;
+                  const isCursor = myStats && i === (myStats.typedCharacters ?? 0);
+                  let color = "text-white/30";
+                  if (isCorrect) color = "text-emerald-400";
+                  else if (isError) color = "text-rose-400 bg-rose-500/30";
+                  else if (isCursor) color = "text-(--accent)";
+                  return <span key={i} className={color} data-battle-cursor={isCursor ? "true" : undefined}>{char}</span>;
+                })}
+              </p>
+            )}
           </div>
         )}
 
-        {/* Typing input */}
+        {/* Player typing input */}
         {isLive && !isMaster && (
-          <div className="mb-4">
+          <div className="mb-3">
             <textarea
               ref={typingInputRef}
               value={localInput}
@@ -432,115 +376,69 @@ export default function BattleArena({
           </div>
         )}
 
-        {isLive && isMaster && (
-          <div className="mb-4 rounded-xl border border-(--accent)/20 bg-black/30 p-4 text-center backdrop-blur">
-            <p className="text-sm text-white/50">Batalla en curso — observá el progreso abajo</p>
-          </div>
-        )}
-
-        {/* Live progress */}
-        {isLive && (
-          <div className="mb-4 space-y-2">
-            {room.players.map((p) => {
-              const stats = calculatePlayerStats(
-                p.input,
-                challenge.text,
-                room.startedAt ?? 0,
-                Date.now(),
-                p.finishedAt,
-              );
-              return (
-                <div
-                  key={p.id}
-                  className="rounded-lg border border-white/5 bg-black/30 px-4 py-2 backdrop-blur"
-                >
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="text-sm font-medium text-white/80">{p.name}</span>
-                    <span className="text-xs text-white/40">
-                      {p.finished ? `✓ ${formatClock(stats.elapsed)}` : `${stats.progress}%`}
-                    </span>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className={`h-full rounded-full transition-all duration-200 ${
-                        p.finished ? "bg-emerald-400" : "bg-(--accent)"
-                      }`}
-                      style={{ width: `${Math.min(100, stats.progress)}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Ranking */}
-        {isFinished && ranking.length > 0 && (
-          <div className="rounded-xl border border-(--accent)/20 bg-black/40 p-5 backdrop-blur">
-            <h2 className="mb-4 text-center text-xl font-bold text-(--accent)">
-              Clasificación Final
+        {/* Player list + live progress - redesigned for many players */}
+        {(isLobby || showCountdown || isLive || isFinished) && room.players.length > 0 && (
+          <div className="mb-3 rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur">
+            <h2 className="mb-3 text-sm font-semibold text-white/60">
+              {isLive ? "Progreso en vivo" : isFinished ? "Resultados" : `Jugadores conectados (${room.players.length})`}
             </h2>
+            <div className="space-y-2">
+              {room.players.map((p) => {
+                const stats = calculatePlayerStats(p.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : Date.now(), p.finishedAt);
+                return renderPlayerRow(p, stats);
+              })}
+            </div>
+          </div>
+        )}
+
+        {room.players.length === 0 && (
+          <div className="mb-3 rounded-xl border border-white/5 bg-black/20 p-6 text-center backdrop-blur">
+            <p className="text-sm text-white/30">Esperando jugadores...</p>
+            <p className="mt-1 text-xs text-white/20">Compartí el código <span className="text-(--accent) font-mono">{roomCode}</span> para que se unan</p>
+          </div>
+        )}
+
+        {/* Ranking table */}
+        {isFinished && ranking.length > 0 && (
+          <div className="mb-3 rounded-xl border border-(--accent)/20 bg-black/40 p-4 backdrop-blur">
+            <h2 className="mb-3 text-center text-lg font-bold text-(--accent)">Clasificación Final</h2>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs sm:text-sm">
                 <thead>
                   <tr className="border-b border-white/10 text-white/50">
-                    <th className="px-3 py-2 text-left">#</th>
-                    <th className="px-3 py-2 text-left">Jugador</th>
-                    <th className="px-3 py-2 text-right">PPM</th>
-                    <th className="px-3 py-2 text-right">Prec.</th>
-                    <th className="px-3 py-2 text-right">Errores</th>
-                    <th className="px-3 py-2 text-right">Tiempo</th>
-                    <th className="px-3 py-2 text-right">Puntaje</th>
+                    <th className="px-2 py-1.5 text-left">#</th>
+                    <th className="px-2 py-1.5 text-left">Jugador</th>
+                    <th className="px-2 py-1.5 text-right">PPM</th>
+                    <th className="px-2 py-1.5 text-right">Prec.</th>
+                    <th className="px-2 py-1.5 text-right">Err.</th>
+                    <th className="px-2 py-1.5 text-right">Tiempo</th>
+                    <th className="px-2 py-1.5 text-right">Puntaje</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ranking.map((entry) => (
-                    <tr
-                      key={entry.name}
-                      className={`border-b border-white/5 ${
-                        entry.position === 1 ? "bg-amber-400/10" : ""
-                      }`}
-                    >
-                      <td className="px-3 py-2 font-bold">
-                        {entry.position === 1 && "🥇"}
-                        {entry.position === 2 && "🥈"}
-                        {entry.position === 3 && "🥉"}
-                        {entry.position > 3 && entry.position}
-                      </td>
-                      <td className={`px-3 py-2 ${entry.position === 1 ? "font-bold text-amber-300" : "text-white/80"}`}>
-                        {entry.name}
-                      </td>
-                      <td className="px-3 py-2 text-right text-white/70">{entry.wpm}</td>
-                      <td className="px-3 py-2 text-right text-white/70">{entry.accuracy}%</td>
-                      <td className="px-3 py-2 text-right text-white/70">{entry.errors}</td>
-                      <td className="px-3 py-2 text-right text-white/70">{entry.elapsedText}</td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-(--accent)">
-                        {entry.score}
-                      </td>
+                    <tr key={entry.name} className={`border-b border-white/5 ${entry.position === 1 ? "bg-amber-400/10" : ""}`}>
+                      <td className="px-2 py-1.5 font-bold">{entry.position === 1 ? "🥇" : entry.position === 2 ? "🥈" : entry.position === 3 ? "🥉" : entry.position}</td>
+                      <td className={`px-2 py-1.5 ${entry.position === 1 ? "font-bold text-amber-300" : "text-white/80"}`}>{entry.name}</td>
+                      <td className="px-2 py-1.5 text-right text-white/70">{entry.wpm}</td>
+                      <td className="px-2 py-1.5 text-right text-white/70">{entry.accuracy}%</td>
+                      <td className="px-2 py-1.5 text-right text-white/70">{entry.errors}</td>
+                      <td className="px-2 py-1.5 text-right text-white/70">{entry.elapsedText}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-(--accent)">{entry.score}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-
-            {isMaster && (
-              <button
-                type="button"
-                onClick={() => sendToServer({ type: "battle-reset" })}
-                className="mt-4 w-full rounded-xl bg-(--accent) px-4 py-3 font-semibold text-white transition hover:brightness-110"
-              >
-                Nueva batalla
-              </button>
-            )}
           </div>
         )}
 
         {/* Activity feed */}
-        <div className="mt-4 rounded-xl border border-white/5 bg-black/30 p-3 backdrop-blur">
-          <h3 className="mb-2 text-xs font-semibold text-white/30">Actividad</h3>
-          <div className="space-y-1">
-            {room.feed.slice(0, 8).map((msg, i) => (
-              <p key={i} className="text-xs text-white/40">{msg}</p>
+        <div className="rounded-xl border border-white/5 bg-black/20 p-3 backdrop-blur">
+          <h3 className="mb-1.5 text-[10px] font-semibold text-white/25">Actividad</h3>
+          <div className="space-y-0.5">
+            {room.feed.slice(0, 5).map((msg, i) => (
+              <p key={i} className="text-[10px] text-white/35">{msg}</p>
             ))}
           </div>
         </div>
@@ -551,10 +449,7 @@ export default function BattleArena({
           open={isCatalogModalOpen}
           texts={textCatalog}
           selectedIndex={room.selectedTextIndex}
-          onSelect={(index) => {
-            sendToServer({ type: "battle-set-text", selectedTextIndex: index });
-            setIsCatalogModalOpen(false);
-          }}
+          onSelect={(index) => { sendToServer({ type: "battle-set-text", selectedTextIndex: index }); setIsCatalogModalOpen(false); }}
           onClose={() => setIsCatalogModalOpen(false)}
           loading={catalogLoading}
           canManage={isMaster}
