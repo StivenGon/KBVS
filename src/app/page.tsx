@@ -60,6 +60,12 @@ export default function Home() {
             >
               Batalla Real
             </Link>
+            <Link
+              href="/battle/master"
+              className="rounded-[22px] border border-amber-400/40 bg-amber-500 px-5 py-4 text-sm font-semibold text-white transition hover:brightness-105"
+            >
+              Maestro Batalla
+            </Link>
           </div>
 
         

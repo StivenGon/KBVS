@@ -28,7 +28,7 @@ export default function BattleLobbyPage() {
         <input
           type="text"
           inputMode="numeric"
-          placeholder="Código de sala (opcional)"
+          placeholder="Código de sala (el mismo del maestro)"
           value={roomCode}
           onChange={(e) => setRoomCode(e.target.value)}
           maxLength={10}
@@ -60,6 +60,15 @@ export default function BattleLobbyPage() {
         <p className="mt-4 text-center text-xs text-white/30">
           Usá el mismo código de sala que el maestro para unirte a la misma partida
         </p>
+
+        <div className="mt-4 text-center">
+          <a
+            href="/battle/master"
+            className="text-xs text-amber-400/70 hover:text-amber-300 underline underline-offset-2"
+          >
+            Soy el maestro — abrir sala de batalla
+          </a>
+        </div>
       </div>
     </main>
   );
