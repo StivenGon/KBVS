@@ -608,7 +608,7 @@ function handleBattleMessage(
       if (incomingVersion < player.typingVersion) break;
 
       const challenge = activeCatalog[room.selectedTextIndex]?.text ?? activeCatalog[0]?.text ?? "";
-      player.input = message.input.slice(0, challenge.length + INPUT_OVERTYPE_BUFFER);
+      player.input = message.input.slice(0, challenge.length + INPUT_OVERTYPE_BUFFER).normalize("NFC");
       player.typingVersion = incomingVersion;
       room.updatedAt = Date.now();
 

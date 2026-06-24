@@ -170,6 +170,20 @@ export default function BattleArena({
   function handleTypingChange(value: string) {
     if (iFinishedRef.current) return;
     const challenge = textCatalog[room?.selectedTextIndex ?? 0]?.text ?? "";
+    if (!challenge) return;
+    const normalizedValue = value.normalize("NFC");
+    const normalizedTarget = challenge.normalize("NFC");
+
+    if (normalizedValue.length >= normalizedTarget.length) {
+      const typedPrefix = normalizedValue.slice(0, normalizedTarget.length);
+      if (typedPrefix === normalizedTarget) {
+        iFinishedRef.current = true;
+        setLocalInput(challenge);
+        sendToServer({ type: "battle-typing", input: challenge, typingVersion: localTypingVersionRef.current + 1 });
+        return;
+      }
+    }
+
     const clamped = value.slice(0, challenge.length + 24);
     setLocalInput(clamped);
     const version = localTypingVersionRef.current + 1;
