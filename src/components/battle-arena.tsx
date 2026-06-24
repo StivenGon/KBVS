@@ -42,6 +42,7 @@ export default function BattleArena({
   const typingSendRafRef = useRef<number | null>(null);
   const queuedTypingRef = useRef<{ input: string; typingVersion: number } | null>(null);
   const challengeTextRef = useRef<HTMLParagraphElement | null>(null);
+  const iFinishedRef = useRef(false);
 
   const displayName = isMaster ? "Maestro" : (playerName?.trim() || "Jugador");
 
@@ -127,6 +128,14 @@ export default function BattleArena({
   }, [room?.matchState, room?.countdownEndsAt]);
 
   useEffect(() => {
+    if (iFinished) {
+      setLocalInput("");
+      queuedTypingRef.current = null;
+      localTypingVersionRef.current = 0;
+    }
+  }, [iFinished]);
+
+  useEffect(() => {
     if (!room || room.matchState !== "live" || isMaster) return;
     const cursorEl = challengeTextRef.current?.querySelector<HTMLSpanElement>('[data-battle-cursor="true"]');
     if (cursorEl) cursorEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -142,6 +151,7 @@ export default function BattleArena({
 
   function flushQueuedTyping() {
     typingSendRafRef.current = null;
+    if (iFinishedRef.current) return;
     const pendingTyping = queuedTypingRef.current;
     if (!pendingTyping) return;
     queuedTypingRef.current = null;
@@ -149,7 +159,7 @@ export default function BattleArena({
   }
 
   function handleTypingChange(value: string) {
-    if (myPlayer?.finished) return;
+    if (iFinishedRef.current) return;
     const challenge = textCatalog[room?.selectedTextIndex ?? 0]?.text ?? "";
     const clamped = value.slice(0, challenge.length + 24);
     setLocalInput(clamped);
@@ -205,6 +215,7 @@ export default function BattleArena({
     ? calculatePlayerStats(myPlayer.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : Date.now(), myPlayer.finishedAt)
     : null;
   const iFinished = myPlayer?.finished ?? false;
+  iFinishedRef.current = iFinished;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-3 py-3 sm:px-4 sm:py-4">
