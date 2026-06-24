@@ -43,6 +43,7 @@ export default function BattleArena({
   const queuedTypingRef = useRef<{ input: string; typingVersion: number } | null>(null);
   const challengeTextRef = useRef<HTMLParagraphElement | null>(null);
   const iFinishedRef = useRef(false);
+  const localFinishedAtRef = useRef<number | null>(null);
   const myPlayerIdRef = useRef<string | null>(null);
 
   const displayName = isMaster ? "Maestro" : (playerName?.trim() || "Jugador");
@@ -130,6 +131,10 @@ export default function BattleArena({
 
   useEffect(() => {
     if (room?.matchState !== "countdown" && room?.matchState !== "live") return;
+    if (iFinishedRef.current && room?.matchState !== "finished") {
+      setClockTick(localFinishedAtRef.current ?? Date.now());
+      return;
+    }
     const timer = window.setInterval(() => setClockTick(Date.now()), 250);
     return () => window.clearInterval(timer);
   }, [room?.matchState, room?.countdownEndsAt]);
@@ -178,6 +183,7 @@ export default function BattleArena({
       const typedPrefix = normalizedValue.slice(0, normalizedTarget.length);
       if (typedPrefix === normalizedTarget) {
         iFinishedRef.current = true;
+        localFinishedAtRef.current = Date.now();
         setLocalInput(challenge);
         sendToServer({ type: "battle-typing", input: challenge, typingVersion: localTypingVersionRef.current + 1 });
         return;
@@ -234,8 +240,9 @@ export default function BattleArena({
   const ranking = isFinished ? buildRanking() : [];
 
   const myPlayer = room.players.find((p) => p.id === myPlayerIdRef.current) || room.players.find((p) => p.name === displayName);
+  const effectiveFinishedAt = myPlayer?.finishedAt ?? localFinishedAtRef.current;
   const myStats = myPlayer
-    ? calculatePlayerStats(myPlayer.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : Date.now(), myPlayer.finishedAt)
+    ? calculatePlayerStats(myPlayer.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : effectiveFinishedAt ?? Date.now(), effectiveFinishedAt)
     : null;
   const iFinished = myPlayer?.finished ?? false;
   iFinishedRef.current = iFinished;
@@ -463,7 +470,8 @@ export default function BattleArena({
             {room.players.length > 0 ? (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
                 {room.players.filter(p => p.name !== "Maestro").map((p) => {
-                  const stats = calculatePlayerStats(p.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : Date.now(), p.finishedAt);
+                  const pFinishedAt = p.finishedAt ?? (p.id === myPlayerIdRef.current ? localFinishedAtRef.current : null);
+                  const stats = calculatePlayerStats(p.input, challenge.text, room.startedAt ?? 0, pFinishedAt ?? Date.now(), pFinishedAt);
                   return (
                     <div key={p.id} className="rounded-xl border border-slate-100 bg-white px-3 py-2">
                       <div className="flex items-center justify-between gap-2">
