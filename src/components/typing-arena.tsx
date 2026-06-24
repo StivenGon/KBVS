@@ -921,7 +921,7 @@ export default function TypingArena({
                     Jugador {activePlayerId} · {activeStats.progress}% · {activeStats.wpm} WPM
                   </span>
                 </div>
-                <div ref={challengeTextContainerRef} className="min-h-0 flex-1 overflow-auto wrap-anywhere max-h-[40vh]">
+                <div ref={challengeTextContainerRef} className="min-h-[120px] flex-1 overflow-y-auto wrap-anywhere max-h-[55vh] sm:max-h-[60vh] pr-1">
                   {renderChallengeText(activePlayerId)}
                 </div>
               </div>
