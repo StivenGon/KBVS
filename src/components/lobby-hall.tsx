@@ -7,7 +7,6 @@ import Link from "next/link";
 import {
   createInitialRoomSnapshot,
   createRoomCode,
-  getChallengeDifficulty,
   normalizePlayerName,
   type ClientRole,
   type PlayerId,
@@ -359,7 +358,7 @@ export default function LobbyHall() {
 
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               {textCatalog.map((challenge, index) => {
-                const difficulty = getChallengeDifficulty(challenge);
+                const difficulty = challenge.difficulty;
                 const selected = index === room.selectedTextIndex;
 
                 return (
