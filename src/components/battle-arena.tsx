@@ -68,7 +68,7 @@ export default function BattleArena({
     const connect = () => {
       if (!mountedRef.current) return;
       if (socketRef.current?.readyState === WebSocket.OPEN) {
-        if (!joined) { send(socketRef.current, { type: "join-battle", name: displayName }); setJoined(true); }
+        if (!joined) { send(socketRef.current, { type: "join-battle", name: displayName, role: isMaster ? "master" : "player" }); setJoined(true); }
         return;
       }
       setConnectionState("connecting");
@@ -78,7 +78,7 @@ export default function BattleArena({
       socket.onopen = () => {
         reconnectDelay = 1000;
         setConnectionState("connected");
-        send(socket, { type: "join-battle", name: displayName });
+        send(socket, { type: "join-battle", name: displayName, role: isMaster ? "master" : "player" });
         setJoined(true);
       };
 

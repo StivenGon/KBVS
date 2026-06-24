@@ -61,6 +61,7 @@ type ClientMessage =
       type: "join-battle";
       name: string;
       roomCode: string;
+      role?: "player" | "master";
     }
   | {
       type: "battle-typing";
@@ -134,6 +135,7 @@ const rooms = new Map<string, RoomSnapshot>();
 const clients = new Set<RoomClient>();
 const battleRooms = new Map<string, BattleRoom>();
 const battleClientsByRoom = new Map<string, Map<BattlePlayerId, { socket: import("ws").WebSocket }>>();
+const battleMastersByRoom = new Map<string, Set<import("ws").WebSocket>>();
 let activeCatalog = getCachedTextCatalog();
 
 void loadTextCatalog({ forceRefresh: true }).then((catalog) => {
@@ -351,6 +353,10 @@ wss.on("connection", (socket) => {
         roomClients.delete(playerId);
         break;
       }
+    }
+
+    for (const [, masters] of battleMastersByRoom) {
+      masters.delete(socket);
     }
   });
 });
@@ -570,6 +576,13 @@ function handleBattleMessage(
 
   switch (message.type) {
     case "join-battle": {
+      if (message.role === "master") {
+        let masters = battleMastersByRoom.get(roomCode);
+        if (!masters) { masters = new Set(); battleMastersByRoom.set(roomCode, masters); }
+        masters.add(socket);
+        publishBattleRoom(roomCode, room, clients);
+        return;
+      }
       for (const [, client] of clients) {
         if (client.socket === socket) return;
       }
@@ -691,6 +704,12 @@ function publishBattleRoom(roomCode: string, room: BattleRoom, clients: Map<Batt
   for (const [, client] of clients) {
     if (client.socket.readyState === WebSocket.OPEN) client.socket.send(payload);
   }
+  const masters = battleMastersByRoom.get(roomCode);
+  if (masters) {
+    for (const masterSocket of masters) {
+      if (masterSocket.readyState === WebSocket.OPEN) masterSocket.send(payload);
+    }
+  }
 }
 
 function publishBattleTypingUpdate(
@@ -711,6 +730,12 @@ function publishBattleTypingUpdate(
   } satisfies ServerMessage);
   for (const [, client] of clients) {
     if (client.socket.readyState === WebSocket.OPEN) client.socket.send(payload);
+  }
+  const masters = battleMastersByRoom.get(roomCode);
+  if (masters) {
+    for (const masterSocket of masters) {
+      if (masterSocket.readyState === WebSocket.OPEN) masterSocket.send(payload);
+    }
   }
 }
 
