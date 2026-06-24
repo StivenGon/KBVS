@@ -149,6 +149,7 @@ export default function BattleArena({
   }
 
   function handleTypingChange(value: string) {
+    if (myPlayer?.finished) return;
     const challenge = textCatalog[room?.selectedTextIndex ?? 0]?.text ?? "";
     const clamped = value.slice(0, challenge.length + 24);
     setLocalInput(clamped);
@@ -427,7 +428,7 @@ export default function BattleArena({
             </h2>
             {room.players.length > 0 ? (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                {room.players.map((p) => {
+                {room.players.filter(p => p.name !== "Maestro").map((p) => {
                   const stats = calculatePlayerStats(p.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : Date.now(), p.finishedAt);
                   return (
                     <div key={p.id} className="rounded-xl border border-slate-100 bg-white px-3 py-2">
