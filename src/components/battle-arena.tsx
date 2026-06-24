@@ -56,6 +56,7 @@ export default function BattleArena({
         const payload = (await response.json()) as { texts?: CatalogText[] };
         if (payload.texts?.length) setTextCatalog(payload.texts);
       }
+      sendToServer({ type: "battle-refresh-catalog" });
     } catch { setTextCatalog(buildFallbackCatalog()); }
     finally { setCatalogLoading(false); }
   }, []);

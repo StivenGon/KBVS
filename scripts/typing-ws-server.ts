@@ -82,6 +82,9 @@ type ClientMessage =
   | {
       type: "battle-reset";
       roomCode: string;
+    }
+  | {
+      type: "battle-refresh-catalog";
     };
 
 type ServerMessage =
@@ -215,7 +218,8 @@ wss.on("connection", (socket) => {
       message.type === "battle-typing" ||
       message.type === "battle-set-text" ||
       message.type === "battle-start-countdown" ||
-      message.type === "battle-reset"
+      message.type === "battle-reset" ||
+      message.type === "battle-refresh-catalog"
     ) {
       handleBattleMessage(socket, message);
       return;
@@ -550,7 +554,7 @@ function handleBattleMessage(
   socket: import("ws").WebSocket,
   message: Extract<
     ClientMessage,
-    { type: "join-battle" | "battle-typing" | "battle-set-text" | "battle-start-countdown" | "battle-reset" }
+    { type: "join-battle" | "battle-typing" | "battle-set-text" | "battle-start-countdown" | "battle-reset" | "battle-refresh-catalog" }
   >,
 ) {
   const roomCode = message.roomCode || "battle";
@@ -656,6 +660,12 @@ function handleBattleMessage(
       room.feed = [`La sala ${roomCode} volvió al lobby.`, ...room.feed].slice(0, 10);
       room.updatedAt = Date.now();
       publishBattleRoom(roomCode, room, clients);
+      break;
+    }
+    case "battle-refresh-catalog": {
+      void loadTextCatalog({ forceRefresh: true }).then((catalog) => {
+        activeCatalog = catalog;
+      });
       break;
     }
   }
