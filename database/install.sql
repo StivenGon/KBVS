@@ -43,7 +43,8 @@ INSERT INTO textos (id_text, text_title, text_desc, text_difficulty_id, is_activ
 VALUES
   (1, 'Ronda de control', 'En la arena de mecanografía, cada palabra cuenta y cada pausa revela el ritmo real del jugador.', 1, 1),
   (2, 'Ronda de precisión', 'Las teclas rápidas no ganan solas; gana quien mantiene precisión, ritmo y control bajo presión.', 2, 1),
-  (3, 'Ronda maestro', 'Dos rivales, una sola línea de texto y un maestro observando cada error en tiempo real.', 3, 1)
+  (3, 'Ronda maestro', 'Dos rivales, una sola línea de texto y un maestro observando cada error en tiempo real.', 3, 1),
+  (4, 'Ronda maratón', 'El campeonato de mecanografía más esperado del año reunió a competidores de todas partes para disputar el título indiscutido del mejor digitador. Las reglas eran simples pero implacables: cada participante debía transcribir con absoluta fidelidad una serie de textos de creciente dificultad frente a un jurado imparcial y a un público expectante que seguía cada pulsación con atención. La presión se sentía en el ambiente mientras los primeros competidores tomaban posición frente a sus estaciones asignadas, ajustaban la altura de las sillas, comprobaban que el teclado respondiera con la sensibilidad requerida y preparaban sus mentes para la batalla que se avecinaba. No se trataba simplemente de escribir rápido, sino de encontrar el equilibrio perfecto entre velocidad, precisión, ritmo y control bajo condiciones adversas donde cualquier error podía significar la diferencia entre la gloria y el olvido. El reloj avanzaba inexorable mientras cada competidor luchaba contra sus propios límites y contra la distracción constante de un entorno diseñado para poner a prueba los nervios más templados.', 3, 1)
 ON DUPLICATE KEY UPDATE
   text_title = VALUES(text_title),
   text_desc = VALUES(text_desc),
