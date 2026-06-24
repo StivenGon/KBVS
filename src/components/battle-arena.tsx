@@ -128,12 +128,14 @@ export default function BattleArena({
   }, [room?.matchState, room?.countdownEndsAt]);
 
   useEffect(() => {
-    if (iFinished) {
+    if (!room) return;
+    const myP = room.players.find((p) => p.name === displayName);
+    if (myP?.finished) {
       setLocalInput("");
       queuedTypingRef.current = null;
       localTypingVersionRef.current = 0;
     }
-  }, [iFinished]);
+  }, [room?.players, displayName]);
 
   useEffect(() => {
     if (!room || room.matchState !== "live" || isMaster) return;
