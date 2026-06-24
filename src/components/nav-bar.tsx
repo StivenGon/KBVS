@@ -7,6 +7,7 @@ const links = [
   { href: "/", label: "Inicio" },
   { href: "/master", label: "Maestro" },
   { href: "/player", label: "Jugador" },
+  { href: "/battle/master", label: "Batalla M." },
   { href: "/battle", label: "Batalla" },
   { href: "/clasificacion", label: "Ranking" },
 ];
