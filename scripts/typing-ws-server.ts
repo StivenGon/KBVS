@@ -583,11 +583,13 @@ function handleBattleMessage(
         let masters = battleMastersByRoom.get(roomCode);
         if (!masters) { masters = new Set(); battleMastersByRoom.set(roomCode, masters); }
         masters.add(socket);
+        send(socket, { type: "server-note", message: `joined:master:${roomCode}` });
         publishBattleRoom(roomCode, room, clients);
         return;
       }
       const player = addBattlePlayer(room, message.name);
       clients.set(player.id, { socket });
+      send(socket, { type: "server-note", message: `joined:${player.id}` });
       publishBattleRoom(roomCode, room, clients);
       break;
     }

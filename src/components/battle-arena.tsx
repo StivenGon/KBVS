@@ -43,6 +43,7 @@ export default function BattleArena({
   const queuedTypingRef = useRef<{ input: string; typingVersion: number } | null>(null);
   const challengeTextRef = useRef<HTMLParagraphElement | null>(null);
   const iFinishedRef = useRef(false);
+  const myPlayerIdRef = useRef<string | null>(null);
 
   const displayName = isMaster ? "Maestro" : (playerName?.trim() || "Jugador");
 
@@ -100,6 +101,12 @@ export default function BattleArena({
               };
             });
           }
+          if (payload.type === "server-note") {
+            const msg = payload.message as string;
+            if (msg.startsWith("joined:") && !msg.startsWith("joined:master:")) {
+              myPlayerIdRef.current = msg.slice(7);
+            }
+          }
           if (payload.type === "error") setConnectionState("error");
         } catch { setConnectionState("error"); }
       };
@@ -129,7 +136,7 @@ export default function BattleArena({
 
   useEffect(() => {
     if (!room) return;
-    const myP = room.players.find((p) => p.name === displayName);
+    const myP = room.players.find((p) => p.id === myPlayerIdRef.current) || room.players.find((p) => p.name === displayName);
     if (myP?.finished) {
       setLocalInput("");
       queuedTypingRef.current = null;
@@ -212,7 +219,7 @@ export default function BattleArena({
   const showCountdown = room.matchState === "countdown";
   const ranking = isFinished ? buildRanking() : [];
 
-  const myPlayer = room.players.find((p) => p.name === displayName);
+  const myPlayer = room.players.find((p) => p.id === myPlayerIdRef.current) || room.players.find((p) => p.name === displayName);
   const myStats = myPlayer
     ? calculatePlayerStats(myPlayer.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : Date.now(), myPlayer.finishedAt)
     : null;
