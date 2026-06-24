@@ -614,9 +614,11 @@ function handleBattleMessage(
 
       const stats = calculatePlayerStats(player.input, challenge, room.startedAt ?? 0, Date.now(), player.finishedAt);
       if (stats.progress >= 100) {
+        player.input = challenge;
         player.finished = true;
         player.finishedAt = Date.now();
-        room.feed = [`${player.name} terminó en ${stats.elapsedText} — ${stats.wpm} PPM, ${stats.accuracy}% precisión`, ...room.feed].slice(0, 10);
+        const finalStats = calculatePlayerStats(player.input, challenge, room.startedAt ?? 0, Date.now(), player.finishedAt);
+        room.feed = [`${player.name} terminó en ${finalStats.elapsedText} — ${finalStats.wpm} PPM, ${finalStats.accuracy}% precisión`, ...room.feed].slice(0, 10);
         publishBattleRoom(roomCode, room, clients);
         if (allBattlePlayersFinished(room)) finishBattle(roomCode, room, clients);
         break;
