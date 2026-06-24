@@ -131,7 +131,7 @@ export default function BattleArena({
 
   useEffect(() => {
     if (room?.matchState !== "countdown" && room?.matchState !== "live") return;
-    if (iFinishedRef.current && room?.matchState !== "finished") {
+    if (iFinishedRef.current) {
       setClockTick(localFinishedAtRef.current ?? Date.now());
       return;
     }
