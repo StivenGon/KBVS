@@ -337,27 +337,7 @@ wss.on("connection", (socket) => {
   socket.on("close", () => {
     leaveRoom(client);
     clients.delete(client);
-
-    for (const [roomCode, roomClients] of battleClientsByRoom) {
-      const entry = Array.from(roomClients.entries()).find(([, c]) => c.socket === socket);
-      if (entry) {
-        const playerId = entry[0];
-        const room = battleRooms.get(roomCode);
-        if (room) {
-          removeBattlePlayer(room, playerId);
-          if (room.matchState === "live" && allBattlePlayersFinished(room)) {
-            finishBattle(roomCode, room, roomClients);
-          }
-          publishBattleRoom(roomCode, room, roomClients);
-        }
-        roomClients.delete(playerId);
-        break;
-      }
-    }
-
-    for (const [, masters] of battleMastersByRoom) {
-      masters.delete(socket);
-    }
+    removeSocketFromAllBattleRooms(socket);
   });
 });
 
@@ -563,6 +543,27 @@ function getBattleClients(roomCode: string): Map<BattlePlayerId, { socket: impor
   return clients;
 }
 
+function removeSocketFromAllBattleRooms(socket: import("ws").WebSocket) {
+  for (const [roomCode, clients] of battleClientsByRoom) {
+    const entry = Array.from(clients.entries()).find(([, c]) => c.socket === socket);
+    if (entry) {
+      const playerId = entry[0];
+      const room = battleRooms.get(roomCode);
+      if (room) {
+        removeBattlePlayer(room, playerId);
+        if (room.matchState === "live" && allBattlePlayersFinished(room)) {
+          finishBattle(roomCode, room, clients);
+        }
+        publishBattleRoom(roomCode, room, clients);
+      }
+      clients.delete(playerId);
+    }
+  }
+  for (const [, masters] of battleMastersByRoom) {
+    masters.delete(socket);
+  }
+}
+
 function handleBattleMessage(
   socket: import("ws").WebSocket,
   message: Extract<
@@ -576,15 +577,14 @@ function handleBattleMessage(
 
   switch (message.type) {
     case "join-battle": {
+      removeSocketFromAllBattleRooms(socket);
+
       if (message.role === "master") {
         let masters = battleMastersByRoom.get(roomCode);
         if (!masters) { masters = new Set(); battleMastersByRoom.set(roomCode, masters); }
         masters.add(socket);
         publishBattleRoom(roomCode, room, clients);
         return;
-      }
-      for (const [, client] of clients) {
-        if (client.socket === socket) return;
       }
       const player = addBattlePlayer(room, message.name);
       clients.set(player.id, { socket });
