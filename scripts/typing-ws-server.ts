@@ -17,6 +17,7 @@ import {
   allBattlePlayersFinished,
   createBattleRoom,
   removeBattlePlayer,
+  type BattlePlayer,
   type BattlePlayerId,
   type BattleRoom,
 } from "../src/lib/typing-battle";
