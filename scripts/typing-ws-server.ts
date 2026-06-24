@@ -481,46 +481,27 @@ function maybeFinishMatch(room: RoomSnapshot) {
 }
 
 function publishRoom(room: RoomSnapshot) {
-  const payload = JSON.stringify({
-    type: "room-snapshot",
-    room,
-  } satisfies ServerMessage);
-
+  const payload = JSON.stringify({ type: "room-snapshot", room } satisfies ServerMessage);
   for (const client of clients) {
-    if (client.roomCode !== room.roomCode) {
-      continue;
-    }
-
-    if (client.socket.readyState === WebSocket.OPEN) {
-      client.socket.send(payload);
-    }
+    if (client.roomCode !== room.roomCode) continue;
+    safeSend(payload, client.socket);
   }
 }
 
 function publishTypingUpdate(room: RoomSnapshot, playerId: PlayerId) {
   const player = room.players[playerId];
   const payload = JSON.stringify({
-    type: "typing-update",
-    roomCode: room.roomCode,
-    playerId,
-    input: player.input,
-    typingVersion: player.typingVersion,
-    updatedAt: room.updatedAt,
+    type: "typing-update", roomCode: room.roomCode, playerId,
+    input: player.input, typingVersion: player.typingVersion, updatedAt: room.updatedAt,
   } satisfies ServerMessage);
-
   for (const client of clients) {
-    if (client.roomCode !== room.roomCode) {
-      continue;
-    }
-
-    if (client.socket.readyState === WebSocket.OPEN) {
-      client.socket.send(payload);
-    }
+    if (client.roomCode !== room.roomCode) continue;
+    safeSend(payload, client.socket);
   }
 }
 
 function send(socket: import("ws").WebSocket, message: ServerMessage) {
-  socket.send(JSON.stringify(message));
+  safeSend(JSON.stringify(message), socket);
 }
 
 function getBattleRoom(roomCode: string): BattleRoom {
@@ -703,17 +684,17 @@ function finishBattle(roomCode: string, room: BattleRoom, clients: Map<BattlePla
   publishBattleRoom(roomCode, room, clients);
 }
 
+function safeSend(payload: string, socket: import("ws").WebSocket) {
+  try {
+    if (socket.readyState === WebSocket.OPEN) socket.send(payload);
+  } catch { /* socket might be closing */ }
+}
+
 function publishBattleRoom(roomCode: string, room: BattleRoom, clients: Map<BattlePlayerId, { socket: import("ws").WebSocket }>) {
   const payload = JSON.stringify({ type: "battle-snapshot", room } satisfies ServerMessage);
-  for (const [, client] of clients) {
-    if (client.socket.readyState === WebSocket.OPEN) client.socket.send(payload);
-  }
+  for (const [, client] of clients) safeSend(payload, client.socket);
   const masters = battleMastersByRoom.get(roomCode);
-  if (masters) {
-    for (const masterSocket of masters) {
-      if (masterSocket.readyState === WebSocket.OPEN) masterSocket.send(payload);
-    }
-  }
+  if (masters) for (const s of masters) safeSend(payload, s);
 }
 
 function publishBattleTypingUpdate(
@@ -725,22 +706,12 @@ function publishBattleTypingUpdate(
   const player = room.players.find((p) => p.id === playerId);
   if (!player) return;
   const payload = JSON.stringify({
-    type: "battle-typing-update",
-    roomCode,
-    playerId,
-    input: player.input,
-    typingVersion: player.typingVersion,
-    updatedAt: room.updatedAt,
+    type: "battle-typing-update", roomCode, playerId,
+    input: player.input, typingVersion: player.typingVersion, updatedAt: room.updatedAt,
   } satisfies ServerMessage);
-  for (const [, client] of clients) {
-    if (client.socket.readyState === WebSocket.OPEN) client.socket.send(payload);
-  }
+  for (const [, client] of clients) safeSend(payload, client.socket);
   const masters = battleMastersByRoom.get(roomCode);
-  if (masters) {
-    for (const masterSocket of masters) {
-      if (masterSocket.readyState === WebSocket.OPEN) masterSocket.send(payload);
-    }
-  }
+  if (masters) for (const s of masters) safeSend(payload, s);
 }
 
 async function handleServerError(error: StartupError, alreadyListening: boolean) {
