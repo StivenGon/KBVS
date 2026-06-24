@@ -12,6 +12,7 @@ import {
   type BattleRankingEntry,
 } from "@/lib/typing-battle";
 import { buildFallbackCatalog, type CatalogText } from "@/lib/text-catalog";
+import TextCatalogModal from "@/components/text-catalog-modal";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
@@ -31,6 +32,7 @@ export default function BattleArena({
   const [textCatalog, setTextCatalog] = useState<CatalogText[]>(() => buildFallbackCatalog());
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [joined, setJoined] = useState(false);
+  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -330,22 +332,13 @@ export default function BattleArena({
         {isMaster && isLobby && (
           <div className="mb-4 rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur">
             <div className="flex items-center gap-3 flex-wrap">
-              <select
-                value={room.selectedTextIndex}
-                onChange={(e) => {
-                  sendToServer({
-                    type: "battle-set-text",
-                    selectedTextIndex: Number(e.target.value),
-                  });
-                }}
-                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+              <button
+                type="button"
+                onClick={() => setIsCatalogModalOpen(true)}
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10 transition"
               >
-                {textCatalog.map((t, i) => (
-                  <option key={t.id} value={i}>
-                    {t.title} ({t.difficulty.label})
-                  </option>
-                ))}
-              </select>
+                Elegir texto ({textCatalog[room.selectedTextIndex]?.title ?? "..."})
+              </button>
               <button
                 type="button"
                 onClick={() => sendToServer({ type: "battle-start-countdown" })}
@@ -552,6 +545,22 @@ export default function BattleArena({
           </div>
         </div>
       </div>
+
+      {isMaster && (
+        <TextCatalogModal
+          open={isCatalogModalOpen}
+          texts={textCatalog}
+          selectedIndex={room.selectedTextIndex}
+          onSelect={(index) => {
+            sendToServer({ type: "battle-set-text", selectedTextIndex: index });
+            setIsCatalogModalOpen(false);
+          }}
+          onClose={() => setIsCatalogModalOpen(false)}
+          loading={catalogLoading}
+          canManage={isMaster}
+          onCatalogRefresh={refreshCatalog}
+        />
+      )}
     </main>
   );
 }
