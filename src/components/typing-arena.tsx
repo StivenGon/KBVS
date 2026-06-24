@@ -344,14 +344,14 @@ export default function TypingArena({
   }, [room.matchState, room.countdownEndsAt]);
 
   useEffect(() => {
-    if (room.matchState !== "live" || isMasterView) return;
+    if (room.matchState !== "live" || clientRole === "master") return;
     const container = challengeTextContainerRef.current;
     if (!container) return;
     const currentWord = container.querySelector<HTMLElement>('[data-current-word="true"]');
     if (currentWord) {
       currentWord.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [room.matchState, activeStats?.progress, isMasterView]);
+  }, [room.matchState, room.updatedAt, clientRole]);
 
   useEffect(() => {
     if (room.matchState !== "finished" || !isLocalPlayer) {
