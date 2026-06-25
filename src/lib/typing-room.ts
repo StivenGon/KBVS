@@ -231,21 +231,15 @@ export function calculatePlayerStats(
   };
 }
 
-function normalizeChar(c: string): string {
-  if (c === "\u2018" || c === "\u2019" || c === "\u201A" || c === "\u201B" || c === "\u2032" || c === "\u2035") return "'";
-  if (c === "\u201C" || c === "\u201D" || c === "\u201E" || c === "\u201F" || c === "\u2033" || c === "\u2036") return '"';
-  if (c === "\u2013" || c === "\u2014" || c === "\u2015") return "-";
-  if (c === "\u2026") return "...";
-  return c.normalize("NFC");
-}
-
 export function normalizeText(s: string): string {
-  return Array.from(s.normalize("NFC"))
-    .map(normalizeChar)
-    .join("")
+  return s
+    .normalize("NFKC")
+    .replace(/[\u2013\u2014\u2015]/g, "-")
+    .replace(/[\u2018\u2019\u201A\u201B\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"')
     .replace(/\s/g, " ")
-    .replace(/[\u200B-\u200F\u2028\u2029\uFEFF]/g, "")
-    .replace(/\u00A0/g, " ");
+    .replace(/[\u200B-\u200F\u2028\u2029\uFEFF\u00AD]/g, "")
+    .replace(/\s+/g, " ");
 }
 
 export function getCorrectPrefixLength(input: string, target: string) {
