@@ -4,6 +4,7 @@ import {
   calculatePlayerStats,
   createCompletionEntry,
   createInitialRoomSnapshot,
+  normalizeTypingInput,
   normalizePlayerName,
   updateRoomFeed,
   winnerFromSnapshot,
@@ -85,6 +86,7 @@ type ClientMessage =
     }
   | {
       type: "battle-refresh-catalog";
+      roomCode?: string;
     };
 
 type ServerMessage =
@@ -306,7 +308,7 @@ wss.on("connection", (socket) => {
           break;
         }
 
-        const normalizedInput = message.input.slice(0, challenge.length + INPUT_OVERTYPE_BUFFER);
+        const normalizedInput = normalizeTypingInput(message.input, challenge, INPUT_OVERTYPE_BUFFER);
 
         room.players[message.playerId] = {
           ...currentPlayer,
@@ -460,7 +462,7 @@ function maybeFinishMatch(room: RoomSnapshot) {
   const now = Date.now();
   const statsA = calculatePlayerStats(room.players.A.input, challenge, room.startedAt, now, room.finishedAt);
   const statsB = calculatePlayerStats(room.players.B.input, challenge, room.startedAt, now, room.finishedAt);
-  const winner = winnerFromSnapshot(room, now);
+  const winner = winnerFromSnapshot(room, now, challenge);
 
   if (!winner) {
     return;
@@ -594,7 +596,7 @@ function handleBattleMessage(
       if (incomingVersion < player.typingVersion) break;
 
       const challenge = activeCatalog[room.selectedTextIndex]?.text ?? activeCatalog[0]?.text ?? "";
-      player.input = message.input.slice(0, challenge.length + INPUT_OVERTYPE_BUFFER).normalize("NFC");
+      player.input = normalizeTypingInput(message.input, challenge, INPUT_OVERTYPE_BUFFER);
       player.typingVersion = incomingVersion;
       room.updatedAt = Date.now();
 

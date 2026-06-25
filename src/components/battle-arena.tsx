@@ -2,13 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  buildTypingTextMatch,
   calculatePlayerStats,
   formatClock,
-  normalizeText,
+  isTypingComplete,
+  normalizeTypingInput,
+  type TypingTextMatch,
+  type TypingTextToken,
 } from "@/lib/typing-room";
 import { resolveTypingWebSocketUrl } from "@/lib/typing-ws-url";
 import {
-  type BattlePlayer,
   type BattleRoom,
   type BattleRankingEntry,
 } from "@/lib/typing-battle";
@@ -178,21 +181,16 @@ export default function BattleArena({
     if (iFinishedRef.current) return;
     const challenge = textCatalog[room?.selectedTextIndex ?? 0]?.text ?? "";
     if (!challenge) return;
-    const normalizedValue = normalizeText(value);
-    const normalizedTarget = normalizeText(challenge);
+    const clamped = normalizeTypingInput(value, challenge, 24);
 
-    if (normalizedValue.length >= normalizedTarget.length) {
-      const typedPrefix = normalizedValue.slice(0, normalizedTarget.length);
-      if (typedPrefix === normalizedTarget) {
-        iFinishedRef.current = true;
-        localFinishedAtRef.current = Date.now();
-        setLocalInput(challenge);
-        sendToServer({ type: "battle-typing", input: challenge, typingVersion: localTypingVersionRef.current + 1 });
-        return;
-      }
+    if (isTypingComplete(clamped, challenge)) {
+      iFinishedRef.current = true;
+      localFinishedAtRef.current = Date.now();
+      setLocalInput(challenge);
+      sendToServer({ type: "battle-typing", input: challenge, typingVersion: localTypingVersionRef.current + 1 });
+      return;
     }
 
-    const clamped = value.slice(0, challenge.length + 24);
     setLocalInput(clamped);
     const version = localTypingVersionRef.current + 1;
     localTypingVersionRef.current = version;
@@ -243,10 +241,12 @@ export default function BattleArena({
 
   const myPlayer = room.players.find((p) => p.id === myPlayerIdRef.current) || room.players.find((p) => p.name === displayName);
   const effectiveFinishedAt = myPlayer?.finishedAt ?? localFinishedAtRef.current;
-  const myStats = myPlayer
-    ? calculatePlayerStats(myPlayer.input, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : effectiveFinishedAt ?? Date.now(), effectiveFinishedAt)
-    : null;
   const iFinished = myPlayer?.finished ?? false;
+  const myDisplayInput = myPlayer ? (iFinished ? myPlayer.input : localInput || myPlayer.input) : localInput;
+  const myDisplayMatch = isMaster ? null : buildTypingTextMatch(myDisplayInput, challenge.text);
+  const myStats = myPlayer
+    ? calculatePlayerStats(myDisplayInput, challenge.text, room.startedAt ?? 0, isFinished ? (room.finishedAt ?? Date.now()) : effectiveFinishedAt ?? Date.now(), effectiveFinishedAt)
+    : null;
   iFinishedRef.current = iFinished;
 
   return (
@@ -360,17 +360,7 @@ export default function BattleArena({
                     className="max-h-[30vh] overflow-y-auto text-lg leading-relaxed select-none scroll-smooth"
                     style={{ wordBreak: "break-word" }}
                   >
-                    {challenge.text.split("").map((char, i) => {
-                      if (!myStats) return <span key={i} className="text-slate-300">{char}</span>;
-                      const isCorrect = i < myStats.correctCharacters;
-                      const isError = i < myStats.typedCharacters && i >= myStats.correctCharacters;
-                      const isCursor = i === myStats.typedCharacters;
-                      let c = "text-slate-300";
-                      if (isCorrect) c = "text-emerald-600 font-medium";
-                      else if (isError) c = "text-rose-600 bg-rose-100 rounded-sm";
-                      else if (isCursor) c = "text-(--accent) font-bold underline decoration-(--accent) underline-offset-2";
-                      return <span key={i} className={c} data-battle-cursor={isCursor ? "true" : undefined}>{char}</span>;
-                    })}
+                    {myDisplayMatch ? renderBattleTypingMatch(myDisplayMatch) : challenge.text}
                   </p>
                 )}
               </div>
@@ -525,4 +515,79 @@ export default function BattleArena({
       )}
     </main>
   );
+}
+
+function renderBattleTypingMatch(match: TypingTextMatch) {
+  const cursorIndex = match.complete
+    ? -1
+    : match.tokens.findIndex((token) => token.kind === "target" && token.status === "pending");
+  const cursorTokenIndex = cursorIndex === -1 && !match.complete ? match.tokens.length : cursorIndex;
+
+  return (
+    <>
+      {match.tokens.map((token, tokenIndex) => (
+        <span key={`battle-token-${tokenIndex}`}>
+          {tokenIndex === cursorTokenIndex ? <BattleTypingCursor /> : null}
+          <span className={getBattleTypingTokenClassName(token)} title={getBattleTypingTokenTitle(token)}>
+            {renderBattleTypingCharacter(token.character)}
+          </span>
+        </span>
+      ))}
+      {cursorTokenIndex === match.tokens.length ? <BattleTypingCursor /> : null}
+    </>
+  );
+}
+
+function BattleTypingCursor() {
+  return (
+    <span
+      className="mx-0.5 inline-block h-[1.05em] w-[2px] align-[-0.15em] rounded-full bg-(--accent) animate-pulse"
+      data-battle-cursor="true"
+      aria-hidden="true"
+    />
+  );
+}
+
+function getBattleTypingTokenClassName(token: TypingTextToken) {
+  if (token.kind === "extra") {
+    return "rounded-sm bg-rose-100 px-0.5 text-rose-700 ring-1 ring-rose-200";
+  }
+
+  if (token.status === "correct") {
+    return "font-medium text-emerald-600";
+  }
+
+  if (token.status === "wrong") {
+    return "rounded-sm bg-rose-100 px-0.5 text-rose-700 ring-1 ring-rose-200";
+  }
+
+  if (token.status === "missing") {
+    return "rounded-sm bg-amber-100 px-0.5 text-amber-700 ring-1 ring-amber-200";
+  }
+
+  return "text-slate-300";
+}
+
+function getBattleTypingTokenTitle(token: TypingTextToken) {
+  if (token.kind === "extra") {
+    return "Carácter extra";
+  }
+
+  if (token.status === "wrong") {
+    return `Esperado: ${token.character}; escrito: ${token.inputCharacter ?? ""}`;
+  }
+
+  if (token.status === "missing") {
+    return "Carácter omitido";
+  }
+
+  return undefined;
+}
+
+function renderBattleTypingCharacter(character: string) {
+  if (character === " ") {
+    return "\u00A0";
+  }
+
+  return character;
 }

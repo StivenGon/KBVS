@@ -77,6 +77,30 @@ export type PlayerStats = {
   elapsedText: string;
 };
 
+export type TypingTextToken =
+  | {
+      kind: "target";
+      character: string;
+      status: "correct" | "wrong" | "missing" | "pending";
+      inputCharacter?: string;
+    }
+  | {
+      kind: "extra";
+      character: string;
+      status: "extra";
+    };
+
+export type TypingTextMatch = {
+  input: string;
+  target: string;
+  tokens: TypingTextToken[];
+  typedCharacters: number;
+  correctCharacters: number;
+  targetCharacters: number;
+  mistakes: number;
+  complete: boolean;
+};
+
 const PLAYER_NAME_MAX_LENGTH = 32;
 
 export function normalizePlayerName(value: string | undefined, fallback: string) {
@@ -197,18 +221,17 @@ export function calculatePlayerStats(
   now: number,
   finishedAt: number | null,
 ): PlayerStats {
-  const normalizedInput = normalizeText(input);
-  const normalizedTarget = normalizeText(target);
-  const typedCharacters = Array.from(normalizedInput).length;
-  const targetCharacters = Array.from(normalizedTarget).length;
-  const correctCharacters = getCorrectPrefixLength(normalizedInput, normalizedTarget);
-  const mistakes = Math.max(0, typedCharacters - correctCharacters);
-  const accuracy = typedCharacters === 0 ? 100 : Math.max(0, Math.round((correctCharacters / typedCharacters) * 100));
-  const finished = correctCharacters >= targetCharacters;
+  const match = buildTypingTextMatch(input, target);
+  const typedCharacters = match.typedCharacters;
+  const targetCharacters = match.targetCharacters;
+  const correctCharacters = match.correctCharacters;
+  const mistakes = match.mistakes;
+  const scoredCharacters = correctCharacters + mistakes;
+  const accuracy = scoredCharacters === 0 ? 100 : Math.max(0, Math.round((correctCharacters / scoredCharacters) * 100));
   const progress =
     targetCharacters === 0
       ? 0
-      : finished
+      : match.complete
         ? 100
         : Math.min(99, Math.round((correctCharacters / targetCharacters) * 100));
   const elapsed = startedAt ? (finishedAt ?? now) - startedAt : 0;
@@ -243,6 +266,177 @@ export function normalizeText(s: string): string {
     .replace(/\s+/g, " ");
 }
 
+export function normalizeTypingInput(input: string, target: string, overtypeBuffer = 24) {
+  const maxCharacters = Array.from(normalizeText(target)).length + overtypeBuffer;
+  return Array.from(normalizeText(input)).slice(0, maxCharacters).join("");
+}
+
+export function isTypingComplete(input: string, target: string) {
+  const normalizedTarget = normalizeText(target);
+
+  return normalizedTarget.length > 0 && normalizeText(input) === normalizedTarget;
+}
+
+export function buildTypingTextMatch(input: string, target: string): TypingTextMatch {
+  const normalizedInput = normalizeText(input);
+  const normalizedTarget = normalizeText(target);
+  const inputCharacters = Array.from(normalizedInput);
+  const targetCharacters = Array.from(normalizedTarget);
+  const inputLength = inputCharacters.length;
+  const targetLength = targetCharacters.length;
+  const width = targetLength + 1;
+  const cellCount = (inputLength + 1) * width;
+  const costs = new Uint32Array(cellCount);
+  const matches = new Uint32Array(cellCount);
+  const operations = new Uint8Array(cellCount);
+
+  for (let inputIndex = 1; inputIndex <= inputLength; inputIndex += 1) {
+    const cellIndex = getMatchCellIndex(inputIndex, 0, width);
+    costs[cellIndex] = costs[getMatchCellIndex(inputIndex - 1, 0, width)] + getInputInsertCost(inputCharacters[inputIndex - 1]);
+    operations[cellIndex] = MATCH_OPERATION_INSERT;
+  }
+
+  for (let targetIndex = 1; targetIndex <= targetLength; targetIndex += 1) {
+    const cellIndex = getMatchCellIndex(0, targetIndex, width);
+    costs[cellIndex] = costs[getMatchCellIndex(0, targetIndex - 1, width)] + getTargetDeleteCost(targetCharacters[targetIndex - 1]);
+    operations[cellIndex] = MATCH_OPERATION_DELETE;
+  }
+
+  for (let inputIndex = 1; inputIndex <= inputLength; inputIndex += 1) {
+    for (let targetIndex = 1; targetIndex <= targetLength; targetIndex += 1) {
+      const inputCharacter = inputCharacters[inputIndex - 1];
+      const targetCharacter = targetCharacters[targetIndex - 1];
+      const equal = inputCharacter === targetCharacter;
+      const cellIndex = getMatchCellIndex(inputIndex, targetIndex, width);
+      const diagonalIndex = getMatchCellIndex(inputIndex - 1, targetIndex - 1, width);
+      const insertIndex = getMatchCellIndex(inputIndex - 1, targetIndex, width);
+      const deleteIndex = getMatchCellIndex(inputIndex, targetIndex - 1, width);
+      let bestCost = costs[diagonalIndex] + (equal ? 0 : getSubstitutionCost(inputCharacter, targetCharacter));
+      let bestMatches = matches[diagonalIndex] + (equal ? 1 : 0);
+      let bestOperation = equal ? MATCH_OPERATION_MATCH : MATCH_OPERATION_SUBSTITUTE;
+      const insertCost = costs[insertIndex] + getInputInsertCost(inputCharacter);
+      const insertMatches = matches[insertIndex];
+
+      if (isBetterMatchCell(insertCost, insertMatches, MATCH_OPERATION_INSERT, bestCost, bestMatches, bestOperation)) {
+        bestCost = insertCost;
+        bestMatches = insertMatches;
+        bestOperation = MATCH_OPERATION_INSERT;
+      }
+
+      const deleteCost = costs[deleteIndex] + getTargetDeleteCost(targetCharacter);
+      const deleteMatches = matches[deleteIndex];
+
+      if (isBetterMatchCell(deleteCost, deleteMatches, MATCH_OPERATION_DELETE, bestCost, bestMatches, bestOperation)) {
+        bestCost = deleteCost;
+        bestMatches = deleteMatches;
+        bestOperation = MATCH_OPERATION_DELETE;
+      }
+
+      costs[cellIndex] = bestCost;
+      matches[cellIndex] = bestMatches;
+      operations[cellIndex] = bestOperation;
+    }
+  }
+
+  let finalTargetIndex = 0;
+  for (let targetIndex = 1; targetIndex <= targetLength; targetIndex += 1) {
+    const candidateIndex = getMatchCellIndex(inputLength, targetIndex, width);
+    const currentIndex = getMatchCellIndex(inputLength, finalTargetIndex, width);
+
+    if (
+      isBetterFinalCell(
+        costs[candidateIndex],
+        matches[candidateIndex],
+        targetIndex,
+        costs[currentIndex],
+        matches[currentIndex],
+        finalTargetIndex,
+      )
+    ) {
+      finalTargetIndex = targetIndex;
+    }
+  }
+
+  const alignedTokens: TypingTextToken[] = [];
+  let inputIndex = inputLength;
+  let targetIndex = finalTargetIndex;
+
+  while (inputIndex > 0 || targetIndex > 0) {
+    const operation = operations[getMatchCellIndex(inputIndex, targetIndex, width)];
+
+    if (operation === MATCH_OPERATION_MATCH || operation === MATCH_OPERATION_SUBSTITUTE) {
+      const inputCharacter = inputCharacters[inputIndex - 1];
+      const targetCharacter = targetCharacters[targetIndex - 1];
+      alignedTokens.push({
+        kind: "target",
+        character: targetCharacter,
+        status: operation === MATCH_OPERATION_MATCH ? "correct" : "wrong",
+        inputCharacter,
+      });
+      inputIndex -= 1;
+      targetIndex -= 1;
+      continue;
+    }
+
+    if (operation === MATCH_OPERATION_INSERT) {
+      alignedTokens.push({
+        kind: "extra",
+        character: inputCharacters[inputIndex - 1],
+        status: "extra",
+      });
+      inputIndex -= 1;
+      continue;
+    }
+
+    if (operation === MATCH_OPERATION_DELETE) {
+      alignedTokens.push({
+        kind: "target",
+        character: targetCharacters[targetIndex - 1],
+        status: "missing",
+      });
+      targetIndex -= 1;
+      continue;
+    }
+
+    break;
+  }
+
+  alignedTokens.reverse();
+
+  for (let pendingIndex = finalTargetIndex; pendingIndex < targetLength; pendingIndex += 1) {
+    alignedTokens.push({
+      kind: "target",
+      character: targetCharacters[pendingIndex],
+      status: "pending",
+    });
+  }
+
+  let correctCharacters = 0;
+  let mistakes = 0;
+
+  for (const token of alignedTokens) {
+    if (token.kind === "target" && token.status === "correct") {
+      correctCharacters += 1;
+      continue;
+    }
+
+    if (token.status === "wrong" || token.status === "missing" || token.status === "extra") {
+      mistakes += 1;
+    }
+  }
+
+  return {
+    input: normalizedInput,
+    target: normalizedTarget,
+    tokens: alignedTokens,
+    typedCharacters: inputLength,
+    correctCharacters,
+    targetCharacters: targetLength,
+    mistakes,
+    complete: normalizedInput === normalizedTarget && targetLength > 0,
+  };
+}
+
 export function getCorrectPrefixLength(input: string, target: string) {
   const inputCharacters = Array.from(normalizeText(input));
   const targetCharacters = Array.from(normalizeText(target));
@@ -255,6 +449,86 @@ export function getCorrectPrefixLength(input: string, target: string) {
   }
 
   return matchedCharacters;
+}
+
+const MATCH_OPERATION_START = 0;
+const MATCH_OPERATION_MATCH = 1;
+const MATCH_OPERATION_SUBSTITUTE = 2;
+const MATCH_OPERATION_INSERT = 3;
+const MATCH_OPERATION_DELETE = 4;
+
+const OPERATION_PRIORITY: Record<number, number> = {
+  [MATCH_OPERATION_START]: 0,
+  [MATCH_OPERATION_MATCH]: 5,
+  [MATCH_OPERATION_SUBSTITUTE]: 4,
+  [MATCH_OPERATION_DELETE]: 3,
+  [MATCH_OPERATION_INSERT]: 2,
+};
+
+function getMatchCellIndex(inputIndex: number, targetIndex: number, width: number) {
+  return inputIndex * width + targetIndex;
+}
+
+function isBetterMatchCell(
+  candidateCost: number,
+  candidateMatches: number,
+  candidateOperation: number,
+  currentCost: number,
+  currentMatches: number,
+  currentOperation: number,
+) {
+  if (candidateCost !== currentCost) {
+    return candidateCost < currentCost;
+  }
+
+  if (candidateMatches !== currentMatches) {
+    return candidateMatches > currentMatches;
+  }
+
+  return OPERATION_PRIORITY[candidateOperation] >= OPERATION_PRIORITY[currentOperation];
+}
+
+function isBetterFinalCell(
+  candidateCost: number,
+  candidateMatches: number,
+  candidateTargetIndex: number,
+  currentCost: number,
+  currentMatches: number,
+  currentTargetIndex: number,
+) {
+  if (candidateCost !== currentCost) {
+    return candidateCost < currentCost;
+  }
+
+  if (candidateMatches !== currentMatches) {
+    return candidateMatches > currentMatches;
+  }
+
+  return candidateTargetIndex > currentTargetIndex;
+}
+
+function getSubstitutionCost(inputCharacter: string, targetCharacter: string) {
+  if (isWhitespaceCharacter(inputCharacter) && isWhitespaceCharacter(targetCharacter)) {
+    return 0;
+  }
+
+  return 2;
+}
+
+function getInputInsertCost(character: string) {
+  return isSoftAlignmentCharacter(character) ? 1 : 2;
+}
+
+function getTargetDeleteCost(character: string) {
+  return isSoftAlignmentCharacter(character) ? 1 : 2;
+}
+
+function isWhitespaceCharacter(character: string) {
+  return /\s/u.test(character);
+}
+
+function isSoftAlignmentCharacter(character: string) {
+  return /[\s.,;:!?¿¡()\[\]{}'"\-]/u.test(character);
 }
 
 export function createDemoAutoAdvance(input: string, target: string) {
@@ -279,8 +553,8 @@ export function updateRoomFeed(feed: string[], message: string) {
   return [message, ...feed].slice(0, 5);
 }
 
-export function winnerFromSnapshot(room: RoomSnapshot, now: number) {
-  const challenge = challengeTexts[room.selectedTextIndex].text;
+export function winnerFromSnapshot(room: RoomSnapshot, now: number, targetText?: string) {
+  const challenge = targetText ?? challengeTexts[room.selectedTextIndex].text;
   const statsA = calculatePlayerStats(room.players.A.input, challenge, room.startedAt, now, room.finishedAt);
   const statsB = calculatePlayerStats(room.players.B.input, challenge, room.startedAt, now, room.finishedAt);
 
