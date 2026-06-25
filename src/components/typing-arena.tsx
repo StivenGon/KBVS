@@ -24,9 +24,10 @@ import auspicioagrope_santarita from "../../images/auspicios/agrope_santa_rita.p
 import {
   calculatePlayerStats,
   createInitialRoomSnapshot,
+  buildTypingTextMatch,
   buildLeaderboard,
   formatClock,
-  getCorrectPrefixLength,
+  normalizeTypingInput,
   winnerFromSnapshot,
   type ClientRole,
   type PlayerId,
@@ -364,7 +365,7 @@ export default function TypingArena({
       return;
     }
 
-    const winnerPlayerId = winnerFromSnapshot(room, room.finishedAt ?? Date.now());
+    const winnerPlayerId = winnerFromSnapshot(room, room.finishedAt ?? Date.now(), challengeText);
 
     if (!winnerPlayerId) {
       return;
@@ -727,9 +728,7 @@ export default function TypingArena({
       return;
     }
 
-    const normalizedValue = event.target.value.replace(/\s+/gu, " ");
-    const limitedValue = normalizedValue.slice(0, challengeText.length + INPUT_OVERTYPE_BUFFER);
-    const nextValue = blockPrematureSpace(limitedValue, challengeText);
+    const nextValue = normalizeTypingInput(event.target.value, challengeText, INPUT_OVERTYPE_BUFFER);
     const nextTypingVersion = localTypingVersionRef.current + 1;
 
     localTypingVersionRef.current = nextTypingVersion;
@@ -897,7 +896,7 @@ export default function TypingArena({
                     <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50 p-2.5 xl:p-3">
                       <div className="mb-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.24em] text-slate-700">
                         <span>Editor en vivo</span>
-                        <span>{room.players[playerId].input.length}/{challengeText.length}</span>
+                        <span>{stats.typedCharacters}/{stats.targetCharacters}</span>
                       </div>
                       <div className="min-h-24 max-h-44 overflow-auto pr-1 sm:min-h-28 sm:max-h-56 xl:min-h-32 xl:max-h-64">
                         {renderChallengeText(playerId, accent)}
@@ -1274,100 +1273,81 @@ function renderChallengeRichText(
   playerId: PlayerId,
   accent?: "emerald" | "amber",
 ) {
-  const targetWords = challengeText.split(" ");
-  const inputWords = playerInput.length === 0 ? [] : playerInput.split(" ");
-  const hasTrailingSpace = playerInput.endsWith(" ");
-  const activeWordIndex = hasTrailingSpace ? Math.max(0, inputWords.length - 1) : Math.max(0, inputWords.length - 1);
+  const match = buildTypingTextMatch(playerInput, challengeText);
+  const cursorIndex = match.complete
+    ? -1
+    : match.tokens.findIndex((token) => token.kind === "target" && token.status === "pending");
+  const cursorTokenIndex = cursorIndex === -1 && !match.complete ? match.tokens.length : cursorIndex;
 
   return (
-    <span className="inline-flex flex-wrap items-baseline gap-x-1 gap-y-1.5">
-      {targetWords.map((word, wordIndex) => {
-        const typedWord = inputWords[wordIndex] ?? "";
-        const isCurrentWord = wordIndex === activeWordIndex;
-        const isCompletedWord = wordIndex < activeWordIndex;
-        const typedCharacters = Array.from(typedWord);
-        const targetCharacters = Array.from(word);
-        const prefixLength = getCorrectPrefixLength(typedWord, word);
-        const wordIsExact = typedWord === word;
-        const wordClassName = isCompletedWord
-          ? "text-slate-800"
-          : isCurrentWord
-            ? "rounded-md bg-slate-100 px-1 text-slate-900 ring-1 ring-inset ring-slate-200"
-            : "text-slate-800";
-
-        return (
-          <span key={`${playerId}-word-${wordIndex}`} className="inline-flex items-baseline whitespace-pre">
-            <span className={wordClassName} data-current-word={isCurrentWord ? "true" : undefined}>
-              {targetCharacters.map((character, characterIndex) => {
-                const typedCharacter = typedCharacters[characterIndex];
-
-                if (characterIndex < typedCharacters.length) {
-                  return (
-                    <span
-                      key={`${playerId}-word-${wordIndex}-char-${characterIndex}`}
-                      className={
-                        typedCharacter === character
-                          ? "text-slate-900"
-                          : "rounded-[0.18rem] bg-rose-100 px-0.5 text-rose-900"
-                      }
-                    >
-                      {character === " " ? "\u00A0" : character}
-                    </span>
-                  );
-                }
-
-                return (
-                  <span key={`${playerId}-word-${wordIndex}-char-${characterIndex}`} className="text-slate-400">
-                    {character === " " ? "\u00A0" : character}
-                  </span>
-                );
-              })}
-
-              {typedCharacters.slice(targetCharacters.length).map((extraCharacter, extraIndex) => (
-                <span
-                  key={`${playerId}-word-${wordIndex}-extra-${extraIndex}`}
-                  className="rounded-[0.18rem] bg-rose-100 px-0.5 text-rose-900"
-                >
-                  {extraCharacter === " " ? "\u00A0" : extraCharacter}
-                </span>
-              ))}
-
-              {isCurrentWord ? (
-                <span
-                  className={`ml-0.5 inline-block h-[1.05em] w-[2px] align-[-0.15em] rounded-full ${
-                    accent === "amber" ? "bg-amber-500" : "bg-emerald-600"
-                  } animate-pulse`}
-                  aria-hidden="true"
-                />
-              ) : null}
-            </span>
-
-            {wordIndex < targetWords.length - 1 ? <span className="select-none text-slate-400">&nbsp;</span> : null}
+    <span className="whitespace-pre-wrap wrap-anywhere rounded-md bg-slate-100/70 px-1 py-0.5 ring-1 ring-inset ring-slate-200/80">
+      {match.tokens.map((token, tokenIndex) => (
+        <span key={`${playerId}-token-${tokenIndex}`}>
+          {tokenIndex === cursorTokenIndex ? <TypingCursor accent={accent} /> : null}
+          <span className={getTypingTokenClassName(token)} title={getTypingTokenTitle(token)}>
+            {renderTypingCharacter(token.character)}
           </span>
-        );
-      })}
+        </span>
+      ))}
+      {cursorTokenIndex === match.tokens.length ? <TypingCursor accent={accent} /> : null}
     </span>
   );
 }
 
-function blockPrematureSpace(value: string, targetText: string) {
-  const normalizedValue = value.replace(/\s+/gu, " ");
+function TypingCursor({ accent }: { accent?: "emerald" | "amber" }) {
+  return (
+    <span
+      className={`mx-0.5 inline-block h-[1.05em] w-[2px] align-[-0.15em] rounded-full ${
+        accent === "amber" ? "bg-amber-500" : "bg-emerald-600"
+      } animate-pulse`}
+      data-current-word="true"
+      aria-hidden="true"
+    />
+  );
+}
 
-  if (!normalizedValue.endsWith(" ")) {
-    return normalizedValue;
+function getTypingTokenClassName(token: ReturnType<typeof buildTypingTextMatch>["tokens"][number]) {
+  if (token.kind === "extra") {
+    return "rounded-[0.18rem] bg-rose-100 px-0.5 text-rose-900 ring-1 ring-rose-200";
   }
 
-  const typedWords = normalizedValue.trimEnd().split(" ");
-  const targetWords = targetText.split(" ");
-  const completedWordIndex = typedWords.length - 1;
-
-  if (completedWordIndex < 0) {
-    return normalizedValue.trimEnd();
+  if (token.status === "correct") {
+    return "text-slate-950";
   }
 
-  return typedWords[completedWordIndex] === targetWords[completedWordIndex]
-    ? normalizedValue
-    : normalizedValue.trimEnd();
+  if (token.status === "wrong") {
+    return "rounded-[0.18rem] bg-rose-100 px-0.5 text-rose-900 ring-1 ring-rose-200";
+  }
+
+  if (token.status === "missing") {
+    return "rounded-[0.18rem] bg-amber-100 px-0.5 text-amber-950 ring-1 ring-amber-200";
+  }
+
+  return "text-slate-400";
+}
+
+function getTypingTokenTitle(token: ReturnType<typeof buildTypingTextMatch>["tokens"][number]) {
+  if (token.kind === "extra") {
+    return "Carácter extra";
+  }
+
+  if (token.status === "wrong") {
+    return `Esperado: ${token.character}; escrito: ${token.inputCharacter ?? ""}`;
+  }
+
+  if (token.status === "missing") {
+    return "Carácter omitido";
+  }
+
+  return undefined;
+}
+
+function renderTypingCharacter(character: string) {
+  if (character === " ") {
+    return "\u00A0";
+  }
+
+  return character;
 }
 
 function sendMessage(socket: WebSocket, message: Record<string, unknown>) {

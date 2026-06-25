@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import BattleArena from "@/components/battle-arena";
 
@@ -10,15 +10,13 @@ function BattleArenaContent() {
   const name = searchParams.get("name") || "";
   const mode = searchParams.get("mode") || "player";
   const roomCode = searchParams.get("room") || "battle";
-  const [ready, setReady] = useState(false);
+  const ready = Boolean(name.trim() || mode === "master");
 
   useEffect(() => {
-    if (!name.trim() && mode !== "master") {
+    if (!ready) {
       router.push("/battle");
-      return;
     }
-    setReady(true);
-  }, [name, mode, router]);
+  }, [ready, router]);
 
   if (!ready) return null;
 
