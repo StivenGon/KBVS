@@ -235,26 +235,27 @@ function normalizeChar(c: string): string {
   if (c === "\u2018" || c === "\u2019" || c === "\u201A" || c === "\u201B" || c === "\u2032" || c === "\u2035") return "'";
   if (c === "\u201C" || c === "\u201D" || c === "\u201E" || c === "\u201F" || c === "\u2033" || c === "\u2036") return '"';
   if (c === "\u2013" || c === "\u2014" || c === "\u2015") return "-";
-  if (c === "\u00A0" || c === "\u2000" || c === "\u2001" || c === "\u2002" || c === "\u2003" || c === "\u2004" || c === "\u2005" || c === "\u2006" || c === "\u2007" || c === "\u2008" || c === "\u2009" || c === "\u200A" || c === "\u202F" || c === "\u205F" || c === "\u3000") return " ";
   if (c === "\u2026") return "...";
   return c.normalize("NFC");
 }
 
 export function normalizeText(s: string): string {
-  return Array.from(s.normalize("NFC")).map(normalizeChar).join("");
+  return Array.from(s.normalize("NFC"))
+    .map(normalizeChar)
+    .join("")
+    .replace(/\s/g, " ")
+    .replace(/[\u200B-\u200F\u2028\u2029\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ");
 }
 
 export function getCorrectPrefixLength(input: string, target: string) {
-  const inputCharacters = Array.from(input).map(normalizeChar);
-  const targetCharacters = Array.from(target).map(normalizeChar);
+  const inputCharacters = Array.from(normalizeText(input));
+  const targetCharacters = Array.from(normalizeText(target));
   const maxLength = Math.min(inputCharacters.length, targetCharacters.length);
   let matchedCharacters = 0;
 
   for (let index = 0; index < maxLength; index += 1) {
-    if (inputCharacters[index] !== targetCharacters[index]) {
-      break;
-    }
-
+    if (inputCharacters[index] !== targetCharacters[index]) break;
     matchedCharacters += 1;
   }
 
