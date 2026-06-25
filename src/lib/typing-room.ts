@@ -234,11 +234,12 @@ export function calculatePlayerStats(
 export function normalizeText(s: string): string {
   return s
     .normalize("NFKC")
+    .replace(/\u2026/g, "...")
     .replace(/[\u2013\u2014\u2015]/g, "-")
     .replace(/[\u2018\u2019\u201A\u201B\u2032]/g, "'")
     .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"')
-    .replace(/\s/g, " ")
-    .replace(/[\u200B-\u200F\u2028\u2029\uFEFF\u00AD]/g, "")
+    .replace(/\p{Z}/gu, " ")
+    .replace(/[\u200B-\u200F\u2028\u2029\uFEFF\u00AD\u2060]/g, "")
     .replace(/\s+/g, " ");
 }
 
