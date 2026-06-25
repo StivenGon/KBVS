@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   calculatePlayerStats,
   formatClock,
+  normalizeText,
 } from "@/lib/typing-room";
 import { resolveTypingWebSocketUrl } from "@/lib/typing-ws-url";
 import {
@@ -177,8 +178,8 @@ export default function BattleArena({
     if (iFinishedRef.current) return;
     const challenge = textCatalog[room?.selectedTextIndex ?? 0]?.text ?? "";
     if (!challenge) return;
-    const normalizedValue = value.normalize("NFC");
-    const normalizedTarget = challenge.normalize("NFC");
+    const normalizedValue = normalizeText(value);
+    const normalizedTarget = normalizeText(challenge);
 
     if (normalizedValue.length >= normalizedTarget.length) {
       const typedPrefix = normalizedValue.slice(0, normalizedTarget.length);

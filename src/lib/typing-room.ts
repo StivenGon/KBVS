@@ -197,8 +197,8 @@ export function calculatePlayerStats(
   now: number,
   finishedAt: number | null,
 ): PlayerStats {
-  const normalizedInput = input.normalize("NFC");
-  const normalizedTarget = target.normalize("NFC");
+  const normalizedInput = normalizeText(input);
+  const normalizedTarget = normalizeText(target);
   const typedCharacters = Array.from(normalizedInput).length;
   const targetCharacters = Array.from(normalizedTarget).length;
   const correctCharacters = getCorrectPrefixLength(normalizedInput, normalizedTarget);
@@ -231,9 +231,22 @@ export function calculatePlayerStats(
   };
 }
 
+function normalizeChar(c: string): string {
+  if (c === "\u2018" || c === "\u2019" || c === "\u201A" || c === "\u201B" || c === "\u2032" || c === "\u2035") return "'";
+  if (c === "\u201C" || c === "\u201D" || c === "\u201E" || c === "\u201F" || c === "\u2033" || c === "\u2036") return '"';
+  if (c === "\u2013" || c === "\u2014" || c === "\u2015") return "-";
+  if (c === "\u00A0" || c === "\u2000" || c === "\u2001" || c === "\u2002" || c === "\u2003" || c === "\u2004" || c === "\u2005" || c === "\u2006" || c === "\u2007" || c === "\u2008" || c === "\u2009" || c === "\u200A" || c === "\u202F" || c === "\u205F" || c === "\u3000") return " ";
+  if (c === "\u2026") return "...";
+  return c.normalize("NFC");
+}
+
+export function normalizeText(s: string): string {
+  return Array.from(s.normalize("NFC")).map(normalizeChar).join("");
+}
+
 export function getCorrectPrefixLength(input: string, target: string) {
-  const inputCharacters = Array.from(input);
-  const targetCharacters = Array.from(target);
+  const inputCharacters = Array.from(input).map(normalizeChar);
+  const targetCharacters = Array.from(target).map(normalizeChar);
   const maxLength = Math.min(inputCharacters.length, targetCharacters.length);
   let matchedCharacters = 0;
 
